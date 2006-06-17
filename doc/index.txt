@@ -1,0 +1,153 @@
+
+h1. Ruby2CExtension
+
+Ruby2CExtension is a Ruby to C extension translator/compiler. It takes any
+Ruby source file, parses it using Ruby's builtin parser and then translates
+the abstract syntax tree into "equivalent" C extension code.
+
+Let's say you have a Ruby file @foo.rb@. To translate it to a C extension and
+then compile it, just run:
+
+PRE
+rb2cx foo.rb
+PREEND
+
+This will produce the files @foo.c@ and @foo.so@ (on Linux). @foo.c@ is the
+generated C extension source code and @foo.so@ is the compiled C extension.
+
+If @foo.rb@ is a library, you can just rename, move or delete (only if you
+have a backup, of course) @foo.rb@ and your Ruby program will just use
+@foo.so@ instead.
+
+If @foo.rb@ is a script, then it isn't possible to just run @foo.so@, because
+Ruby does not support running C extensions directly, but you can do this:
+
+PRE
+ruby -r foo.so -e ""
+PREEND
+
+which should produce the same output as
+
+PRE
+ruby -r foo.rb -e ""
+PREEND
+
+
+h2. Why?
+
+Well, like everybody else I wanted a faster Ruby and I also wanted to learn
+about Ruby's internals, so I thought translating Ruby to C might be worth a
+try...
+
+The results are not as good as I had hoped, but they aren't bad either: the
+generated C extension is practically never slower than the Ruby code and I
+found cases where it is more than twice as fast, usually it is somewhere in
+between.
+
+Of course Ruby2CExtension can also be used as an obfuscator for Ruby code,
+though this was not my main motivation.
+
+
+h2. Requirements
+
+Ruby2CExtension is developed for and only tested with Ruby 1.8.4. So you should
+really use that version. It might work with other 1.8 versions, it definitely
+won't work with Ruby 1.9.
+
+Ruby2CExtension requires RubyNode to access Ruby's node trees (the AST).
+RubyNode is available at
+"http://rubynode.rubyforge.org/":http://rubynode.rubyforge.org/.
+
+Ruby2CExtension is pure Ruby code, so it should work on all plattforms that
+Ruby supports, but it is currently only tested on Linux. There might be
+problems with the C code to shared object compiling step on some platforms.
+
+
+h2. Download
+
+* "Project page":http://rubyforge.org/projects/ruby2cext/
+* "Download":http://rubyforge.org/frs/?group_id=1799
+
+
+h2. Installation
+
+Just run (as root):
+
+PRE
+ruby setup.rb
+PREEND
+
+This will install @rb2cx@ and @ruby2cext.rb@ to the default locations.
+Optionally you can supply some options to @setup.rb@ to customize the
+installation (see @"ruby setup.rb --help"@).
+
+
+h2. Features
+
+Ruby2CExtension supports a very large subset of Ruby's features (it can
+translate itself into a C extension and the compiled version works correctly):
+
+* all the basics (classes, methods, ...)
+* blocks, closures
+* @instance_eval@, @define_method@, ... (only when the block is given directly)
+* correct constant and class variable lookup
+* @raise@, @rescue@, @retry@, @ensure@
+* ...
+
+Things that (currently) don't work:
+
+* @break@ with a value from inside a block
+* @return@ from inside a block
+* @return@, @break@, @next@, @redo@ "through" a @rescue@/@ensure@ clause
+* @defined?@ is not implemented for all cases
+* block pass (passing a proc as block to a method) works, but only through a
+  hack and it doesn't work (correctly) for things like @instance_eval@
+
+Some of the above things might be fixed in future versions.
+
+Things that don't work as expected and probably never will:
+
+* methods like @local_variables@, that depend on a Ruby SCOPE
+* interoperability with @eval(str)@ and similar methods that parse a string and
+  eval it; these methods work, but they might not behave as expected (i.e.
+  access to local variables and similar things won't work, see above)
+* @callcc@ works but might behave strangely (in particular local variables
+  might behave wrong)
+* some more things, please see "limitations":limitations.html
+
+Ruby2CExtension will translate and compile Ruby files using one or more of the
+above functionalities without a warning, so if your Ruby code uses such
+functionality, please verify that the compiled C extension works as expected.
+
+For more details please see "limitations":limitations.html.
+
+
+h2. Usage
+
+As described above just run @rb2cx@ with the file(s) you want to translate and
+compile as argument(s).
+
+@rb2cx@ also accepts some options:
+
+| @-c@ | @--only-c@  |  only translate to C   |
+| @-v@ | @--verbose@ |  print status messages |
+| @-h@ | @--help@    |  print help            |
+
+Have fun!
+
+
+h2. Feedback
+
+If you find a bug, think that something doesn't work as it should or have
+other suggestions, then please don't hesitate to "contact
+me":mailto:dbatml@remove_nospam.gmx.de and tell me about it.
+
+I am also interested to know if Ruby2CExtension works under Windows (or other
+non Linux platforms).
+
+
+h2. License
+
+Copyright 2006 "Dominik Bathon":mailto:dbatml@remove_nospam.gmx.de.
+
+Ruby2CExtension is licensed under the same terms as Ruby.

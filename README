@@ -1,0 +1,63 @@
+
+Ruby2CExtension
+===============
+
+Ruby2CExtension is a Ruby to C extension translator/compiler. It takes any Ruby
+source file, parses it using Ruby's builtin parser and then translates the
+abstract syntax tree into "equivalent" C extension code.
+
+
+Requirements
+------------
+
+Ruby2CExtension is developed for and only tested with Ruby 1.8.4. So you should
+really use that version. It might work with other 1.8 versions, it definitely
+won't work with Ruby 1.9.
+
+Ruby2CExtension requires RubyNode to access Ruby's node trees (the AST).
+RubyNode is available at http://rubynode.rubyforge.org/.
+
+Ruby2CExtension is pure Ruby code, so it should work on all plattforms that
+Ruby supports, but it is currently only tested on Linux. There might be
+problems with the C code to shared object compiling step on some platforms.
+
+
+Installation
+------------
+
+Just run (as root):
+
+  ruby setup.rb
+
+This will install rb2cx and ruby2cext.rb to the default locations. Optionally
+you can supply some options to setup.rb, to customize the installation (see
+"ruby setup.rb --help").
+
+
+Usage / Features / Limitations
+------------------------------
+
+To translate a Ruby file foo.rb to a C extension, just run:
+
+  rb2cx foo.rb
+
+For more information please see doc/index.html and doc/limitations.html.
+
+
+Feedback
+--------
+
+If you find a bug, think that something doesn't work as it should or have other
+suggestions, then please don't hesitate to contact me (dbatml@gmx.de) and tell
+me about it.
+
+I am also interested to know if Ruby2CExtension works under Windows (or other
+non Linux platforms).
+
+
+License
+-------
+
+Copyright 2006 Dominik Bathon <dbatml@gmx.de>
+
+Ruby2CExtension is licensed under the same terms as Ruby.

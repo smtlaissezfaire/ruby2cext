@@ -1,0 +1,399 @@
+
+h1. Ruby2CExtension Limitations
+
+Ruby2CExtension has some limitations. Some things do not work "by design"
+other things don't work because they are not (yet) implemented.
+
+Generally Ruby2CExtension tries to match Ruby's semantics as close as
+possible, so if a Ruby file doesn't fail to compile and doesn't have any of
+the issues described below, then the compiled C extension should just work and
+behave exactly as the Ruby code would.
+
+
+h2. Warnings and Exceptions
+
+Not all warnings, that Ruby code might emit, are reproduced in the compiled C
+extension.
+
+Ruby2CExtension also omits some checks that might raise exceptions for Ruby
+code (it won't warn or raise exceptions on wrong argument count in lambdas for
+example).
+
+As a rule of thumb: if Ruby code works without warnings then the compiled C
+extension will also work without warnings, but if the Ruby code emits
+warnings, then the compiled C extension might emit less warnings.
+
+Also, sometimes the compiled C extension will raise slightly different
+exceptions than the Ruby code would.
+
+
+h2. C Extension Limitations
+
+Because the compiled code will be a C extension it will also behave like a C
+extension:
+
+* backtraces will look like backtraces of C extensions (i.e. no line
+  numbers, ...)
+* a trace proc set with @set_trace_func@ will only get C extension events
+  (@"c-call"@, @"c-return"@, @"raise"@), instead of the usual Ruby code events
+
+
+h2. Arity
+
+All methods and procs defined in Ruby code that is compiled to a C extension
+will return @-1@ as @arity@. So if your Ruby code depends on the method
+@arity@, you might have to change your code.
+
+
+h2. Continuations
+
+Continuations (@callcc@) are possible in compiled Ruby code, but you might see
+wrong behaviour with local variables (i.e. they will have an old value),
+depending on whether these local variables are needed for a closure or not.
+
+In short, you probably should not use continuations in Ruby code that you want
+to compile to a C extension.
+
+
+h2. Scope
+
+In Ruby every scope (class scope, methods, ...) has an associated C struct
+SCOPE which stores the local variables (including @$~@ and @$_@) for that scope.
+Methods that are implemented in a C extension don't get such a SCOPE, because
+it is expensive to set up and they don't need it (they just use variables on
+the stack).
+
+That means that the methods in Ruby code that is compiled to a C extension
+won't get a SCOPE either, which is usually no problem because local variables
+are handled differently anyway. It only gets a problem, if the code uses
+methods that work with the current SCOPE. Here are some of these methods:
+
+* @local_variables@
+* @eval@
+* @binding@
+
+These methods will work, but they will see the SCOPE of the nearest Ruby code
+scope. This is also true for @$_@ and @$~@ (and the derived @$&@, @$`@, @$'@,
+@$1@, ...). Example:
+
+PRE
+def bar
+  a = 2
+  "xxx" =~ /./ # changes $~ of the nearest Ruby code scope
+  p eval("a") # won't return 2 (a's value), instead it will be evaled in the
+              # nearest Ruby code scope
+  local_variables # returns local variables of the nearest Ruby code scope
+end
+PREEND
+
+If bar is compiled into a C extension and then called from the following Ruby
+code:
+
+PRE
+a = b = 42
+$~ = nil
+p bar
+p $~
+PREEND
+
+Then it will output
+
+PRE
+42
+["a", "b"]
+#<MatchData: ...>
+PREEND
+
+instead of the expected
+
+PRE
+2
+["a"]
+nil
+PREEND
+
+Another consequence is that if compiled methods call each other, they will all
+share the same @$_@ and @$~@ (those of the nearest Ruby code scope). This
+might make some code behave unexpectedly.
+
+
+h2. Vmode
+
+The so called vmode is also associated with the Ruby SCOPE (though not
+directly stored inside the SCOPE struct). The vmode is set by methods like
+@private@, @protected@ and @public@ and determines which visibility newly
+defined methods get.
+
+Ruby2CExtension does not access the current vmode, instead it tries to figure
+out at compile time what visibility a method defined using @def@ will get.
+@Module#define_method@ will use vmode.
+
+If your code doesn't do anything tricky, then the compile time heuristic
+should just work as expected. Here is an example, where it fails:
+
+PRE
+class A
+  def pub; end # public
+
+  private if nil # Ruby2CExtension sees a call to private, so all following defs
+                 # will be private
+  def pub2; end # will be private in the compiled C extension
+  define_method(:pub3) {} # will be public
+end
+PREEND
+
+As above calling methods like @private@ in a compiled C extension can affect
+the calling Ruby code:
+
+PRE
+# in compiled C extension
+def my_private
+  private
+end
+PREEND
+
+PRE
+# in Ruby code
+class A
+  def a;end # public
+  my_private
+  def b;end # private, but would be public if the above code was not compiled
+end
+PREEND
+
+To be save, don't use the methods @private@, @public@, ... without arguments,
+if they are used with arguments (like @private :meth1, :meth2@), they will not
+change the current vmode.
+
+You are also save if you only use them in class scopes (which should usually
+be the case), because the class scopes are run directly when requiring the
+compiled C extension and Ruby will reset the vmode to the previous value
+afterwards.
+
+Here is an example which works as expected and is safe:
+
+PRE
+# start of foo.rb
+def m1; end # private
+class A
+  def m2; end # public
+  private
+  def m3; end # private
+  define_method(:m4) {} # private
+  protected
+  def m5; end # protected
+end
+def m6; end # private
+public
+def m7; end # public
+# end of foo.rb
+PREEND
+
+
+h2. Cref
+
+The so called cref is another Ruby internal that Ruby2CExtension has to
+emulate. The cref is a linked list that describes the current lexical
+class/module nesting. Example:
+
+PRE
+class A
+  class B
+    # cref here is B -> A -> Object
+  end
+  # cref here is A -> Object
+  module C
+    # cref here is C -> A -> Object
+  end
+end
+# cref here is Object
+PREEND
+
+The current cref is used for constant and class variable lookup and for @def@,
+@undef@ and @alias@.
+
+Ruby2CExtension emulates cref with the same semantics as Ruby. There are only
+two problems.
+
+First, when a method is defined in Ruby code it saves the current cref for
+later use. From C it isn't possible to store an extra value when defining a
+method, so Ruby2CExtension works around this problem by storing the cref in a
+global variable. But there is still a problem when a @def@ is used/run
+multiple times, because the cref can differ each time.
+
+So if a @def@, that requires a cref, is used multiple times, then the compiled
+C extension will raise an exception (this is the only case where code compiled
+with Ruby2CExtension raises an exception that Ruby wouldn't raise). If a @def@
+doesn't need a cref, then everything is fine and it can be used multiple
+times. Examples:
+
+PRE
+["a", "b"].each { |s|
+  class << s
+    def bar; self; end # is OK, doesn't need cref
+  end
+}
+
+["a", "b"].each { |s|
+  class << s
+    def baz; Array.new(self); end # fails the 2nd time
+  end
+}
+PREEND
+
+The second case fails because the constant lookup for Array needs a cref. If
+you really need this to work, then you can use ::Array instead of Array,
+because that won't need a cref.
+
+Again in the usual case everything should be fine and if you really need to
+use a @def@, that requires a cref, multiple times, then you might be able to
+modify it so that it won't need a cref.
+
+The second problem that arises from Ruby2CExtension emulating crefs is that
+methods, that access Ruby's internal cref, will see the wrong cref and thus
+not behave as expected. Those methods are @Module.nesting@, @Module.constants@
+(but @Module#constants@ works), @autoload@ and @autoload?@ (use
+@Module#autoload@ and @Module#autoload?@ instead).
+
+
+h2. Block Pass
+
+There currently is no way to pass a Proc instance as the block parameter to a
+method call on the C side, i.e. there is no way to do the following from C:
+
+PRE
+def foo(proc)
+  bar(&proc)
+end
+PREEND
+
+Ruby2CExtension works around this by compiling the above to something similar
+to this:
+
+PRE
+def foo(proc)
+  tmp_proc = proc.to_proc
+  bar { |*arg| tmp_proc.call(*arg) }
+end
+PREEND
+
+The downside of this workaround is that it doesn't work (as expected) with
+methods like @instance_eval@ and it is problematic if a proc is passed deep
+into a recursive method, because that block will then be wrapped multiple
+times.
+
+This issue might be fixed if a future Ruby version provides a way to cleanly
+pass a proc to a method call.
+
+
+h2. Block Argument Semantics
+
+Block argument semantics are a bit tricky, but Ruby2CExtension should get it
+right for most cases, here are two cases where the result is wrong:
+
+PRE
+def t1(*a); yield *a; end
+p t1([1, 2]) { |a| a }
+
+def bl_pa_tst(); p yield([1, 2]); end
+pc = proc { |*a| a }
+bl_pa_tst(&pc)
+bl_pa_tst { |*a| a }
+PREEND
+
+Ruby outputs:
+
+PRE
+[1, 2]
+[[1, 2]]
+[[1, 2]]
+PREEND
+
+The compiled C extension outputs:
+
+PRE
+[[1, 2]]
+[1, 2]
+[1, 2]
+PREEND
+
+But again, for most cases it should just work and maybe it will get better in
+future Ruby2CExtension versions.
+
+
+h2. Not Supported Features
+
+Ruby files that use one or more of the above described problematic things will
+usually compile just fine and fail or behave wrong at runtime. In contrast,
+the following things will be catched at compile time. Most of them are just
+not supported yet and might be added later.
+
+
+h3. Control Flow
+
+Most of the things that are not supported are related to control flow. Ruby
+implements most of its control flow using @setjmp()@ and @longjmp()@. Most of
+this is in @eval.c@ and there is no real API to access it, so Ruby2CExtension
+has to do some tricks to make control flow work. For most cases workarounds
+are implemented, but some of the harder cases are not (yet) supported.
+
+The first thing that isn't supported is @return@ from inside a block. Also
+@break@ with a value from inside a block is not supported (but @break@ without
+a value is):
+
+PRE
+def foo
+  bar(1, 2, 3) {
+    next      # works
+    next 42   # works
+    redo      # works
+    break     # works
+    break 42  # does not work
+    return    # does not work
+    return 42 # does not work
+  }
+  return    # works
+  return 42 # works
+end
+PREEND
+
+For @while@/@until@ loops everything works.
+
+Another problematic area is control flow "through" a @rescue@ or @ensure@
+clause:
+
+PRE
+def foo
+  while bar?
+    begin
+      next      # does not work
+      next 42   # does not work
+      redo      # does not work
+      break     # does not work
+      break 42  # does not work
+      return    # does not work
+      return 42 # does not work
+      # but:
+      while baz?
+        next      # works
+        next 42   # works
+        redo      # works
+        break     # works
+        break 42  # works
+        return    # does not work
+        return 42 # does not work
+      end
+    rescue
+      nil
+    end
+  end
+end
+PREEND
+
+
+h3. @defined?@
+
+The @defined?@ statement is also not fully supported, it works for most of the
+common cases like constants, global variables, instance variables, class
+variables and @$~@ (and derived). Ruby2CExtension fails at compile time if a
+case is not supported.
