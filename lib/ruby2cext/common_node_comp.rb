@@ -44,6 +44,23 @@ module Ruby2CExtension
 			l "}"
 		end
 
+		def c_static_once
+			c_scope_res {
+				l "static int static_once_done = 0;"
+				l "static VALUE static_once_value;"
+				c_if("!static_once_done") {
+					assign_res(yield)
+					# other thread might have been faster
+					c_if("!static_once_done") {
+						l "static_once_value = res;"
+						l "rb_global_variable(&static_once_value);"
+						l "static_once_done = 1;"
+					}
+				}
+				"static_once_value"
+			}
+		end
+
 		def make_block(block)
 			if block
 				block.first == :block ? block : [:block, [block]]
@@ -125,7 +142,20 @@ module Ruby2CExtension
 			else
 				l "/* #{node.first} */"
 				begin
-					send("comp_#{node.first}", node.last)
+					if (pps = compiler.preprocessors_for(node.first))
+						pp_node = node
+						pps.each { |pp_proc|
+							pp_node = pp_proc[self, pp_node]
+							break unless Array === pp_node
+						}
+						if Array === pp_node
+							send("comp_#{pp_node.first}", pp_node.last)
+						else
+							pp_node
+						end
+					else
+						send("comp_#{node.first}", node.last)
+					end
 				rescue Ruby2CExtError => e
 					if Hash === node.last
 						n = node.last[:node]
@@ -1093,19 +1123,8 @@ module Ruby2CExtension
 			"rb_reg_new(RSTRING(res)->ptr, RSTRING(res)->len, #{hash[:cflag]})"
 		end
 		def comp_dregx_once(hash)
-			c_scope_res {
-				l "static int done = 0;"
-				l "static VALUE regx;"
-				c_if("!done") {
-					assign_res(comp_dregx(hash))
-					# other thread might have been faster
-					c_if("!done") {
-						l "regx = res;"
-						l "rb_global_variable(&regx);"
-						l "done = 1;"
-					}
-				}
-				"regx"
+			c_static_once {
+				comp_dregx(hash)
 			}
 		end
 		def comp_xstr(hash)

@@ -1,5 +1,11 @@
 Changelog
 
+* builtin method call optimization plugin
+* local constant caching plugin
+* new plugin architecture
+* small fixes
+* split ruby2cext.rb into multiple files
+
 -- 0.1.0
 
 * Initial release

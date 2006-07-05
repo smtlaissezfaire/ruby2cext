@@ -15,6 +15,8 @@ module Ruby2CExtension
 			@global_man = Tools::GlobalManager.new
 			@uniq_names = Tools::UniqueNames.new
 			@helpers = {}
+			@plugins = []
+			@preprocessors = {}
 		end
 
 		def to_c_code
@@ -29,6 +31,7 @@ module Ruby2CExtension
 				@global_man.to_c_code,
 			]
 			res.concat(@helpers.values.sort)
+			@plugins.each { |plugin| res << plugin.global_c_code }
 			res.concat(@funs)
 			res << "void Init_#{@name}() {"
 			res << "org_ruby_top_self = ruby_top_self;"
@@ -37,6 +40,7 @@ module Ruby2CExtension
 			res << "init_syms();"
 			res << "init_globals();"
 			res << "NODE *cref = rb_node_newnode(NODE_CREF, rb_cObject, 0, 0);"
+			@plugins.each { |plugin| res << plugin.init_c_code }
 			@toplevel_funs.each { |f| res << "#{f}(ruby_top_self, cref);" }
 			res << "}"
 			res.join("\n").split("\n").map { |l| l.strip }.reject { |l| l.empty? }.join("\n")
@@ -66,9 +70,49 @@ module Ruby2CExtension
 			@funs << str
 		end
 
+		def add_plugin(plugin_class, *args)
+			@plugins << plugin_class.new(self, *args)
+		end
+
+		# preprocessors can be added by plugins. preprocessors are procs that
+		# take two arguments: the current cfun and the node (tree) to
+		# preprocess (which will have type node_type)
+		#
+		# The proc can either return a (modified) node (tree) or string. If a
+		# node (tree) is returned then that will be translated as usual, if a
+		# string is returned, that string will be the result
+		#
+		# Example, a preprocessor that replaces 23 with 42:
+		# add_preprocessor(:lit) { |cfun, node|
+		#   node.last[:lit] == 23 ? [:lit, {:lit=>42}] : node
+		# }
+		#
+		# Another way to do the same:
+		# add_preprocessor(:lit) { |cfun, node|
+		#   node.last[:lit] == 23 ? cfun.comp_lit(:lit=>42) : node
+		# }
+		#
+		# If multiple preprocessors are added for the same node type then they
+		# will be called after each other with the result of the previous one
+		# unless it is a string, then the following preprocessors are ignored
+		def add_preprocessor(node_type, &pp_proc)
+			(@preprocessors[node_type] ||= []) << pp_proc
+		end
+
+		def preprocessors_for(node_type)
+			@preprocessors[node_type]
+		end
+
 		class << self
 			def compile_ruby_to_c(source_str, name, file_name)
 				c = self.new(name)
+
+				# TODO: require plugins conditionally via options
+				require "ruby2cext/plugins/const_cache"
+				c.add_plugin(Plugins::ConstCache)
+				require "ruby2cext/plugins/builtin_methods"
+				c.add_plugin(Plugins::BuiltinMethods, Plugins::BuiltinMethods::SUPPORTED_BUILTINS)
+
 				hash = Parser.parse_string(source_str, file_name)
 				# abb all BEGIN blocks, if available
 				if (beg_tree = hash[:begin])
