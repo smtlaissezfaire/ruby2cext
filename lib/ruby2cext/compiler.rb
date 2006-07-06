@@ -135,6 +135,8 @@ module Ruby2CExtension
 				c = self.new(name, verbose)
 
 				# TODO: require plugins conditionally via options
+				require "ruby2cext/plugins/warnings"
+				c.add_plugin(Plugins::Warnings)
 				require "ruby2cext/plugins/const_cache"
 				c.add_plugin(Plugins::ConstCache)
 				require "ruby2cext/plugins/builtin_methods"

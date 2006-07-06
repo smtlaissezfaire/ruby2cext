@@ -1,6 +1,7 @@
 Changelog
 
-# require include plugin
+* warnings plugin
+* require include plugin
 * builtin method call optimization plugin
 * local constant caching plugin
 * new plugin architecture

@@ -483,8 +483,9 @@ module Ruby2CExtension
 			c_scope_res {
 				l "VALUE proc;"
 				l "proc = #{comp(hash[:body])};"
+				iter = hash[:iter]
 				c_if("NIL_P(proc)") {
-					assign_res(comp(hash[:iter]))
+					assign_res(send("comp_#{iter.first}", iter.last))
 				}
 				c_else {
 					# rb_obj_is_proc is static in eval.c, so we just convert and hope the best...
@@ -522,7 +523,7 @@ module Ruby2CExtension
 							}
 						}
 						EOC
-					assign_res(handle_iter(hash[:iter], "block_pass_helper_block", "proc"))
+					assign_res(handle_iter(iter, "block_pass_helper_block", "proc"))
 				}
 				"res"
 			}
