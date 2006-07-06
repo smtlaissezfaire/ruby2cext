@@ -1,5 +1,6 @@
 Changelog
 
+# require include plugin
 * builtin method call optimization plugin
 * local constant caching plugin
 * new plugin architecture

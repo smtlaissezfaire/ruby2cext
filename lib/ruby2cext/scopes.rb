@@ -7,8 +7,8 @@ module Ruby2CExtension
 		class Scope
 			VMODES = [:public, :private, :protected, :module_function]
 
-			def initialize(tbl, top_level = false)
-				@vmode = top_level ? :private : :public
+			def initialize(tbl, private_vmode = false)
+				@vmode = private_vmode ? :private : :public
 				@tbl = tbl || []
 				@closure_tbl = nil # must be set by user
 			end

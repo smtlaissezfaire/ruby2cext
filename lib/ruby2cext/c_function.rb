@@ -216,9 +216,9 @@ module Ruby2CExtension
 		end
 
 		class ToplevelScope < ClassModuleScope
-			def self.compile(compiler, scope_node)
+			def self.compile(compiler, scope_node, private_vmode = true)
 				ensure_node_type(scope_node, :scope)
-				cf = self.new(compiler, Scopes::Scope.new(scope_node.last[:tbl], true))
+				cf = self.new(compiler, Scopes::Scope.new(scope_node.last[:tbl], private_vmode))
 				fname = cf.un("toplevel_scope")
 				cf.instance_eval {
 					block = make_block(scope_node.last[:next])

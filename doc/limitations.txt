@@ -126,7 +126,7 @@ defined methods get.
 
 Ruby2CExtension does not access the current vmode, instead it tries to figure
 out at compile time what visibility a method defined using @def@ will get.
-@Module#define_method@ will use vmode.
+But be careful with @Module#define_method@: it will use Ruby's internal vmode.
 
 If your code doesn't do anything tricky, then the compile time heuristic
 should just work as expected. Here is an example, where it fails:

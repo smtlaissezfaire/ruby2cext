@@ -7,8 +7,12 @@ require "ruby2cext/c_function"
 module Ruby2CExtension
 
 	class Compiler
-		def initialize(name)
+
+		attr_reader :name, :verbose
+
+		def initialize(name, verbose = false)
 			@name = name
+			@verbose = verbose
 			@funs = []
 			@toplevel_funs = []
 			@sym_man = Tools::SymbolManager.new
@@ -47,8 +51,25 @@ module Ruby2CExtension
 		end
 
 		# non destructive: node_tree will not be changed
-		def add_toplevel(node_tree)
-			@toplevel_funs << CFunction::ToplevelScope.compile(self, node_tree)
+		def add_toplevel(node_tree, private_vmode = true)
+			@toplevel_funs << CFunction::ToplevelScope.compile(self, node_tree, private_vmode)
+		end
+
+		def add_rb_file(source_str, file_name)
+			hash = Parser.parse_string(source_str, file_name)
+			# abb all BEGIN blocks, if available
+			if (beg_tree = hash[:begin])
+				beg_tree = beg_tree.transform(:include_node => true)
+				if beg_tree.first == :block
+					beg_tree.last.each { |s| add_toplevel(s, false) }
+				else
+					add_toplevel(beg_tree, false)
+				end
+			end
+			# add toplevel scope
+			if (tree = hash[:tree])
+				add_toplevel(tree.transform(:include_node => true))
+			end
 		end
 
 		# uniq name
@@ -60,6 +81,12 @@ module Ruby2CExtension
 		end
 		def global(str)
 			@global_man.get(str)
+		end
+
+		def log(str, force = false)
+			if verbose || force
+				puts str
+			end
 		end
 
 		def add_helper(str)
@@ -104,29 +131,18 @@ module Ruby2CExtension
 		end
 
 		class << self
-			def compile_ruby_to_c(source_str, name, file_name)
-				c = self.new(name)
+			def compile_ruby_to_c(source_str, name, file_name, verbose = false)
+				c = self.new(name, verbose)
 
 				# TODO: require plugins conditionally via options
 				require "ruby2cext/plugins/const_cache"
 				c.add_plugin(Plugins::ConstCache)
 				require "ruby2cext/plugins/builtin_methods"
 				c.add_plugin(Plugins::BuiltinMethods, Plugins::BuiltinMethods::SUPPORTED_BUILTINS)
+				require "ruby2cext/plugins/require_include"
+				c.add_plugin(Plugins::RequireInclude, ["."])
 
-				hash = Parser.parse_string(source_str, file_name)
-				# abb all BEGIN blocks, if available
-				if (beg_tree = hash[:begin])
-					beg_tree = beg_tree.transform(:include_node => true)
-					if beg_tree.first == :block
-						beg_tree.last.each { |s| c.add_toplevel(s) }
-					else
-						c.add_toplevel(beg_tree)
-					end
-				end
-				# add toplevel scope
-				if (tree = hash[:tree])
-					c.add_toplevel(tree.transform(:include_node => true))
-				end
+				c.add_rb_file(source_str, file_name)
 				c.to_c_code
 			end
 
@@ -162,7 +178,7 @@ module Ruby2CExtension
 				puts "reading #{file_name}" if verbose
 				source_str = IO.read(file_name)
 				puts "translating #{file_name} to C" if verbose
-				c_code = compile_ruby_to_c(source_str, name, file_name)
+				c_code = compile_ruby_to_c(source_str, name, file_name, verbose)
 				file_basename = File.join(File.dirname(file_name), name)
 				puts "writing #{file_basename}.c" if verbose
 				File.open("#{file_basename}.c", "w") { |f| f.puts(c_code) }
