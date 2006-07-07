@@ -359,13 +359,30 @@ PREEND
 
 For @while@/@until@ loops everything works.
 
-Another problematic area is control flow "through" a @rescue@ or @ensure@
-clause:
+Another problematic area in Ruby2CExtension 0.1.0 was control flow "through" a
+@rescue@ or @ensure@ clause. This is mostly implemented now, only in @ensure@
+clauses it still does not work (it _does_ work in @ensure@ bodies):
 
 PRE
 def foo
   while bar?
     begin
+      next      # works
+      next 42   # works
+      redo      # works
+      break     # works
+      break 42  # works
+      return    # works
+      return 42 # works
+    rescue
+      next      # works
+      next 42   # works
+      redo      # works
+      break     # works
+      break 42  # works
+      return    # works
+      return 42 # works
+    ensure
       next      # does not work
       next 42   # does not work
       redo      # does not work
@@ -373,18 +390,6 @@ def foo
       break 42  # does not work
       return    # does not work
       return 42 # does not work
-      # but:
-      while baz?
-        next      # works
-        next 42   # works
-        redo      # works
-        break     # works
-        break 42  # works
-        return    # does not work
-        return 42 # does not work
-      end
-    rescue
-      nil
     end
   end
 end

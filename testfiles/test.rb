@@ -354,3 +354,194 @@ rescue => e
 	p e
 end
 
+def cf1
+	begin
+		return 5
+	ensure
+		puts "ensure"
+	end
+	6
+end
+p cf1
+
+def cf2
+	begin
+		while true
+			begin
+				return 5555
+			ensure
+				puts "ensure"
+			end
+		end
+	ensure
+		puts "ensure"
+	end
+	6
+end
+p cf2
+
+def cf22
+	begin
+		while true
+			begin
+				break 5555
+			ensure
+				puts "ensure"
+			end
+		end
+	ensure
+		puts "ensure"
+	end + 6
+end
+p cf22
+
+def cf3
+	1.instance_eval {
+		begin
+			break
+		ensure
+			puts "ensure"
+		end
+	}
+end
+p cf3
+
+def cf4
+	i = 0
+	5.times {
+		begin
+			break if i == 3
+			i+=1
+			puts "xxx"
+			begin
+				redo
+			ensure
+				puts "ensure"
+				while true
+					break
+				end
+			end
+		ensure
+			puts "ensure"
+		end
+	}
+	i
+end
+p cf4
+
+def cf5
+	i = 0
+	5.instance_eval {
+		begin
+			next
+		ensure
+			puts "ensure"
+		end
+	}
+end
+p cf5
+
+def cf6
+	i = 0
+	5.instance_eval {
+		begin
+			next 24
+		rescue
+			puts "bug"
+		end
+	}
+end
+p cf6
+
+def cf61
+	i = 0
+	5.instance_eval {
+		begin
+			raise
+		rescue
+			next 24
+		end
+	}
+end
+p cf61
+
+def cf7
+	loop {
+		begin
+			break
+		rescue
+			puts "bug"
+		ensure
+			puts "ensure"
+		end
+	}
+	23
+end
+p cf7
+
+def cf71
+	loop {
+		begin
+			raise
+		rescue
+			break
+		ensure
+			puts "ensure"
+		end
+	}
+	23
+end
+p cf71
+
+def cf8
+	while true
+		begin
+			return 1234
+		rescue
+			puts "bug"
+		ensure
+			puts "ensure"
+		end
+	end
+	23
+end
+p cf8
+
+def cf81
+	while true
+		begin
+			raise
+		rescue
+			return 1234
+		ensure
+			puts "ensure"
+		end
+	end
+	23
+end
+p cf81
+
+def cf9
+	i = 0
+	5.times {
+		begin
+			break if i == 3
+			i+=1
+			puts "xxx"
+			begin
+				raise
+			rescue
+				while true
+					puts "yyy"
+					break
+				end
+				redo
+			end
+		ensure
+			puts "ensure"
+		end
+	}
+	i
+end
+p cf9
+

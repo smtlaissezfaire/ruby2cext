@@ -20,9 +20,9 @@ module Ruby2CExtension::Plugins
 						args[0].first == :str &&
 						(file = search_file(args[0].last[:lit]))
 					unless done[File.expand_path(file)]
-						cfun.compiler.log "require'd file included: #{file}"
-						cfun.compiler.add_rb_file(IO.read(file), file)
 						done[File.expand_path(file)] = true
+						cfun.compiler.log "including require'd file: #{file}"
+						cfun.compiler.add_rb_file(IO.read(file), file)
 					end
 					"Qtrue"
 				else

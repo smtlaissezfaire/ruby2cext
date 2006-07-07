@@ -1,5 +1,6 @@
 Changelog
 
+* implemented control flow "through" ensure/rescue clauses
 * warnings plugin
 * require include plugin
 * builtin method call optimization plugin

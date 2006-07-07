@@ -267,7 +267,6 @@ module Ruby2CExtension
 			if args
 				c_scope_res {
 					build_args(args)
-					"rb_call_super(argc, argv)"
 					iter_proc["rb_call_super(%s, %s)", %w[argc argv], %w[int VALUE*]]
 				}
 			else
@@ -542,47 +541,24 @@ module Ruby2CExtension
 		end
 
 		def comp_break(hash)
-			if (lbl = in_while?(:break))
-				l "while_res = #{comp(hash[:stts])};"
-				l "goto #{lbl};"
-			elsif in_block?
-				raise Ruby2CExtError::NotSupported, "break with a value is not supported in a block" if hash[:stts]
-				l "rb_iter_break();"
-			else
-				raise Ruby2CExtError::NotSupported, "break is not supported here"
-			end
-			"Qnil"
+			# must be implemented by the "user" of CommonNodeComp
+			raise Ruby2CExtError::NotSupported, "break is not supported"
 		end
 		def comp_next(hash)
-			if (lbl = in_while?(:next))
-				# hash[:stts] is silently ignored (as ruby does)
-				l "goto #{lbl};"
-			elsif in_block?
-				l "return #{comp(hash[:stts])};"
-			else
-				raise Ruby2CExtError::NotSupported, "next is not supported here"
-			end
-			"Qnil"
+			# must be implemented by the "user" of CommonNodeComp
+			raise Ruby2CExtError::NotSupported, "next is not supported"
 		end
 		def comp_redo(hash)
-			if (lbl = (in_while?(:redo) || in_block?(:redo)))
-				l "goto #{lbl};"
-			else
-				raise Ruby2CExtError::NotSupported, "redo is not supported here"
-			end
-			"Qnil"
-		end
-		def comp_retry(hash)
-			l "rb_jump_tag(0x4 /* TAG_RETRY */);"
-			"Qnil"
+			# must be implemented by the "user" of CommonNodeComp
+			raise Ruby2CExtError::NotSupported, "redo is not supported"
 		end
 		def comp_return(hash)
-			if return_allowed?
-				l "return #{comp(hash[:stts])};"
-			else
-				raise Ruby2CExtError::NotSupported, "return is not supported here"
-			end
-			"Qnil"
+			# must be implemented by the "user" of CommonNodeComp
+			raise Ruby2CExtError::NotSupported, "return is not supported"
+		end
+		def comp_retry(hash)
+			# must be implemented by the "user" of CommonNodeComp
+			raise Ruby2CExtError::NotSupported, "retry is not supported"
 		end
 
 		def comp_splat(hash)
@@ -605,16 +581,17 @@ module Ruby2CExtension
 		def comp_rescue(hash)
 			ensure_node_type(resb = hash[:resq], :resbody)
 			# compile the real body
+			cflow_hash = {}
 			body = un("rescue_body")
-			CFunction::Wrap.compile(self, body) { |cf|
+			CFunction::Wrap.compile(self, body, cflow_hash) { |cf|
 				cf.instance_eval {
-					l "#{get_wrap_ptr}->state = 1;"
+					l "#{get_wrap_ptr}->state |= 1;"
 					comp(hash[:head])
 				}
 			}
 			res_bodies = un("rescue_resbodies")
 			# now all the resbodies in one c function
-			CFunction::Wrap.compile(self, res_bodies) { |cf|
+			CFunction::Wrap.compile(self, res_bodies, cflow_hash) { |cf|
 				cf.instance_eval {
 					cnt = 0
 					while resb
@@ -659,7 +636,7 @@ module Ruby2CExtension
 							end
 							l "if (res) {"
 						end
-						l "#{get_wrap_ptr}->state = 0;"
+						l "#{get_wrap_ptr}->state &= ~1;" # set first bit = 0
 						assign_res(comp(resb.last[:body]))
 						l "}"
 						l "else {"
@@ -674,15 +651,17 @@ module Ruby2CExtension
 			}
 			# now call rb_rescue2 with the two bodies (and handle else if necessary)
 			c_scope_res {
-				l "long save_state = #{get_wrap_ptr}->state;"
+				l "long save_state = #{get_wrap_ptr}->state, do_else;"
 				wp = "(VALUE)#{get_wrap_ptr}"
 				assign_res("rb_rescue2(#{body}, #{wp}, #{res_bodies}, #{wp}, rb_eException, (VALUE)0)")
+				l "do_else = #{get_wrap_ptr}->state & 1;"
+				l "#{get_wrap_ptr}->state = (#{get_wrap_ptr}->state & ~1) | (save_state & 1);" # restore the 1st bit of save_state
+				CFunction::Wrap::handle_wrap_cflow(self, cflow_hash)
 				if els = hash[:else]
-					c_if("#{get_wrap_ptr}->state == 1") {
+					c_if("do_else") {
 						assign_res(comp(els))
 					}
 				end
-				l "#{get_wrap_ptr}->state = save_state;"
 				"res"
 			}
 		end
@@ -690,9 +669,17 @@ module Ruby2CExtension
 		def comp_ensure(hash)
 			b = un("ensure_body")
 			e = un("ensure_ensure")
-			CFunction::Wrap.compile(self, b) { |cf| cf.comp(hash[:head]) }
-			CFunction::Wrap.compile(self, e) { |cf| cf.comp(hash[:ensr]) }
-			"rb_ensure(#{b}, (VALUE)#{get_wrap_ptr}, #{e}, (VALUE)#{get_wrap_ptr})"
+			cflow_hash = {}
+			CFunction::Wrap.compile(self, b, cflow_hash) { |cf| cf.comp(hash[:head]) }
+			CFunction::Wrap.compile(self, e) { |cf| cf.comp(hash[:ensr]) } # ensr without cflow
+			ensr_code = "rb_ensure(#{b}, (VALUE)#{get_wrap_ptr}, #{e}, (VALUE)#{get_wrap_ptr})"
+			if cflow_hash.empty?
+				ensr_code
+			else
+				assign_res(ensr_code)
+				CFunction::Wrap::handle_wrap_cflow(self, cflow_hash)
+				"res"
+			end
 		end
 
 		def comp_and(hash)
