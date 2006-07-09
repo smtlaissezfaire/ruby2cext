@@ -6,10 +6,10 @@ module Ruby2CExtension::Plugins
 	class RequireInclude < Ruby2CExtension::Plugin
 
 		attr_reader :include_paths
-		def initialize(compiler, include_paths)
+		def initialize(compiler, main_file, include_paths)
 			super(compiler)
 			@include_paths = include_paths
-			done = {}
+			done = {File.expand_path(main_file) => true}
 			compiler.add_preprocessor(:fcall) { |cfun, node|
 				hash = node.last
 				if hash[:mid] == :require &&
@@ -22,7 +22,24 @@ module Ruby2CExtension::Plugins
 					unless done[File.expand_path(file)]
 						done[File.expand_path(file)] = true
 						cfun.compiler.log "including require'd file: #{file}"
-						cfun.compiler.add_rb_file(IO.read(file), file)
+						cfun.instance_eval {
+							add_helper <<-EOC
+								static NODE * find_top_cref(NODE *cref) {
+									while (cref && cref->nd_next) cref = cref->nd_next;
+									return cref;
+								}
+							EOC
+							c_scope {
+								l "NODE *top_cref = find_top_cref(#{get_cref});"
+								l "static int done = 0;"
+								c_if("!done") {
+									l "done = 1;"
+									compiler.rb_file_to_toplevel_functions(IO.read(file), file).each { |tlfn|
+										l "#{tlfn}(org_ruby_top_self, top_cref);"
+									}
+								}
+							}
+						}
 					end
 					"Qtrue"
 				else

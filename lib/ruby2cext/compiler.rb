@@ -50,26 +50,38 @@ module Ruby2CExtension
 			res.join("\n").split("\n").map { |l| l.strip }.reject { |l| l.empty? }.join("\n")
 		end
 
-		# non destructive: node_tree will not be changed
-		def add_toplevel(node_tree, private_vmode = true)
-			@toplevel_funs << CFunction::ToplevelScope.compile(self, node_tree, private_vmode)
+		def add_toplevel(function_name)
+			@toplevel_funs << function_name
 		end
 
-		def add_rb_file(source_str, file_name)
+		# non destructive: node_tree will not be changed
+		def compile_toplevel_function(node_tree, private_vmode = true)
+			CFunction::ToplevelScope.compile(self, node_tree, private_vmode)
+		end
+
+		def rb_file_to_toplevel_functions(source_str, file_name)
+			res = []
 			hash = Parser.parse_string(source_str, file_name)
 			# abb all BEGIN blocks, if available
 			if (beg_tree = hash[:begin])
 				beg_tree = beg_tree.transform(:include_node => true)
 				if beg_tree.first == :block
-					beg_tree.last.each { |s| add_toplevel(s, false) }
+					beg_tree.last.each { |s| res << compile_toplevel_function(s, false) }
 				else
-					add_toplevel(beg_tree, false)
+					res << compile_toplevel_function(beg_tree, false)
 				end
 			end
 			# add toplevel scope
 			if (tree = hash[:tree])
-				add_toplevel(tree.transform(:include_node => true))
+				res << compile_toplevel_function(tree.transform(:include_node => true))
 			end
+			res
+		end
+
+		def add_rb_file(source_str, file_name)
+			rb_file_to_toplevel_functions(source_str, file_name).each { |fn|
+				add_toplevel(fn)
+			}
 		end
 
 		# uniq name
@@ -142,7 +154,7 @@ module Ruby2CExtension
 				require "ruby2cext/plugins/builtin_methods"
 				c.add_plugin(Plugins::BuiltinMethods, Plugins::BuiltinMethods::SUPPORTED_BUILTINS)
 				require "ruby2cext/plugins/require_include"
-				c.add_plugin(Plugins::RequireInclude, ["."])
+				c.add_plugin(Plugins::RequireInclude, file_name, ["."])
 
 				c.add_rb_file(source_str, file_name)
 				c.to_c_code

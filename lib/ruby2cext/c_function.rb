@@ -277,7 +277,7 @@ module Ruby2CExtension
 			def self.compile(outer, scope_node, def_fun, class_var, mid)
 				ensure_node_type(scope_node, :scope)
 				cf = self.new(outer.compiler, Scopes::Scope.new(scope_node.last[:tbl]))
-				fname = cf.un("method")
+				fname = cf.un("method_#{mid.to_s.gsub(/\W+/m, "")}")
 				cf.instance_eval {
 					block = [:block, make_block(scope_node.last[:next]).last.dup] # dup the block to allow modification
 					arg = block.last.shift

@@ -157,8 +157,7 @@ module Ruby2CExtension
 						send("comp_#{node.first}", node.last)
 					end
 				rescue Ruby2CExtError => e
-					if Hash === node.last
-						n = node.last[:node]
+					if Hash === node.last && (n = node.last[:node])
 						# add file and line to message
 						raise "#{n.file}:#{n.line}: #{e}"
 					else
