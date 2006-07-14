@@ -24,17 +24,11 @@ c.add_toplevel(c.compile_toplevel_function([:scope, {
 	:rval=>false
 }]))
 c = c.to_c_code
-cnt = c[/BUILTINOPT_FP buitinopt_method_tbl.(\d+)./, 1].to_i
-p cnt
 c=c.split("\n")[0..-3]
-c.concat(c.grep(/= buitinopt_method_lookup.rb_/))
-c << %{
-	{
-		int i;
-		for (i=0; i < #{cnt}; ++i) {
-			if (!buitinopt_method_tbl[i]) rb_bug("at %d", i);
-		}
-	}
+lookups = c.join("\n").scan(/= (builtinopt_method_lookup.rb_.*);/).flatten
+p lookups.size
+lookups.each { |l|
+	c << "if (!(#{l})) rb_warn(\"#{l} failed\");"
 }
 c << "}"
 File.open("bm_test.c", "w") { |f|

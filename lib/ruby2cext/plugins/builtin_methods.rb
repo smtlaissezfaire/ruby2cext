@@ -9,6 +9,8 @@ module Ruby2CExtension::Plugins
 
 		SUPPORTED_BUILTINS = [:Array, :Bignum, :FalseClass, :Fixnum, :Float, :Hash, :NilClass, :Regexp, :String, :Symbol, :TrueClass]
 
+		NO_CLASS_CHECK_BUILTINS = [:FalseClass, :Fixnum, :NilClass, :Symbol, :TrueClass]
+
 		COMMON_METHODS = [ # all supported builtins use these methods from Kernel
 			 [:__id__, 0, :Kernel],
 			 [:class, 0, :Kernel],
@@ -421,42 +423,42 @@ module Ruby2CExtension::Plugins
 		METHOD_NAME_MAPPINGS = Hash.new { |h, k|
 			case k.to_s
 			when /\A\w+\z/
-				h[k] = "buitinoptmeth_#{k}"
+				h[k] = "builtinoptmeth_#{k}"
 			when /\A\w+\?\z/
-				h[k] = "buitinoptmeth_#{k.to_s[0..-2]}__pred"
+				h[k] = "builtinoptmeth_#{k.to_s[0..-2]}__pred"
 			when /\A\w+!\z/
-				h[k] = "buitinoptmeth_#{k.to_s[0..-2]}__bang"
+				h[k] = "builtinoptmeth_#{k.to_s[0..-2]}__bang"
 			when /\A\w+=\z/
-				h[k] = "buitinoptmeth_#{k.to_s[0..-2]}__assign"
+				h[k] = "builtinoptmeth_#{k.to_s[0..-2]}__assign"
 			else
 				raise Ruby2CExtension::Ruby2CExtError::Bug, "unexpected method name: #{k.inspect}"
 			end
 		}
 		METHOD_NAME_MAPPINGS.merge!({
-			:+@  => "buitinoptop_uplus",
-			:-@  => "buitinoptop_uminus",
-			:+   => "buitinoptop_plus",
-			:-   => "buitinoptop_minus",
-			:*   => "buitinoptop_mul",
-			:/   => "buitinoptop_div",
-			:**  => "buitinoptop_pow",
-			:%   => "buitinoptop_mod",
-			:~   => "buitinoptop_rev",
-			:==  => "buitinoptop_equal",
-			:=== => "buitinoptop_eqq",
-			:=~  => "buitinoptop_match",
-			:<=> => "buitinoptop_cmp",
-			:>   => "buitinoptop_gt",
-			:>=  => "buitinoptop_ge",
-			:<   => "buitinoptop_lt",
-			:<=  => "buitinoptop_le",
-			:&   => "buitinoptop_and",
-			:|   => "buitinoptop_or",
-			:^   => "buitinoptop_xor",
-			:[]  => "buitinoptop_aref",
-			:[]= => "buitinoptop_aset",
-			:<<  => "buitinoptop_lshift",
-			:>>  => "buitinoptop_rshift",
+			:+@  => "builtinoptop_uplus",
+			:-@  => "builtinoptop_uminus",
+			:+   => "builtinoptop_plus",
+			:-   => "builtinoptop_minus",
+			:*   => "builtinoptop_mul",
+			:/   => "builtinoptop_div",
+			:**  => "builtinoptop_pow",
+			:%   => "builtinoptop_mod",
+			:~   => "builtinoptop_rev",
+			:==  => "builtinoptop_equal",
+			:=== => "builtinoptop_eqq",
+			:=~  => "builtinoptop_match",
+			:<=> => "builtinoptop_cmp",
+			:>   => "builtinoptop_gt",
+			:>=  => "builtinoptop_ge",
+			:<   => "builtinoptop_lt",
+			:<=  => "builtinoptop_le",
+			:&   => "builtinoptop_and",
+			:|   => "builtinoptop_or",
+			:^   => "builtinoptop_xor",
+			:[]  => "builtinoptop_aref",
+			:[]= => "builtinoptop_aset",
+			:<<  => "builtinoptop_lshift",
+			:>>  => "builtinoptop_rshift",
 		})
 
 		BUILTIN_TYPE_MAP = Hash.new { |h, k|
@@ -477,14 +479,11 @@ module Ruby2CExtension::Plugins
 		def initialize(compiler, builtins)
 			super(compiler)
 			builtins = SUPPORTED_BUILTINS & builtins # "sort" and unique
-			@methods = {} # [meth_sym, arity] =>
-			              # [[type, impl. class/mod, types of first arg or nil,
-			              # meth_tbl_data: [idx, [C class var, impl. C class/mod var, id, arity]] (initialized to nil)], ...]
+			@methods = {} # [meth_sym, arity] => # [[type, impl. class/mod, types of first arg or nil], ...]
 			@function_names = {} # [meth_sym, arity] => name # initialized on first use
-			@method_tbl_size = 0
 			builtins.each { |builtin|
 				(METHODS[builtin] + COMMON_METHODS).each { |arr|
-					(@methods[arr[0, 2]] ||= []) << [builtin, arr[2] || builtin, arr[3], nil]
+					(@methods[arr[0, 2]] ||= []) << [builtin, arr[2] || builtin, arr[3]]
 				}
 			}
 			compiler.add_preprocessor(:call) { |cfun, node|
@@ -524,20 +523,15 @@ module Ruby2CExtension::Plugins
 			if (fn = function_names[ma])
 				return fn
 			end
-			if (m = methods[ma])
-				fn = function_names[ma] = "#{METHOD_NAME_MAPPINGS[method]}__#{arity}"
-				m.each { |meth_arr|
-					meth_arr[3] = [@method_tbl_size, [BUILTIN_C_VAR_MAP[meth_arr[0]], BUILTIN_C_VAR_MAP[meth_arr[1]], compiler.sym(method), arity]]
-					@method_tbl_size += 1
-				}
-				fn
+			if methods[ma]
+				function_names[ma] = "#{METHOD_NAME_MAPPINGS[method]}__#{arity}"
 			else
 				nil
 			end
 		end
 
 		METHOD_LOOKUP_CODE = %{
-			static BUILTINOPT_FP buitinopt_method_lookup(VALUE klass, VALUE origin, ID mid, long arity) {
+			static BUILTINOPT_FP builtinopt_method_lookup(VALUE klass, VALUE origin, ID mid, long arity) {
 				NODE *body;
 				while (klass != origin) {
 					if (TYPE(klass) == T_ICLASS && RBASIC(klass)->klass == origin) break;
@@ -560,20 +554,27 @@ module Ruby2CExtension::Plugins
 			unless function_names.empty?
 				res = []
 				res << "typedef VALUE (*BUILTINOPT_FP)(ANYARGS);"
-				res << "static BUILTINOPT_FP buitinopt_method_tbl[#{@method_tbl_size}];"
 				res << METHOD_LOOKUP_CODE
 				function_names.sort_by { |ma, name| name }.each { |ma, name|
-					method, arity = *ma
+					method_sym, arity = *ma
 					res << "static VALUE #{name}(VALUE recv#{arity > 0 ? ", VALUE *argv" : ""}) {"
+					res << "static BUILTINOPT_FP method_tbl[#{methods[ma].size}];"
 					res << "static int lookup_done = 0;"
 					res << "if (!lookup_done) {"
 					res << "lookup_done = 1;"
-					methods[ma].each { |m|
-						res << "buitinopt_method_tbl[#{m[3][0]}] = buitinopt_method_lookup(#{m[3][1].join(", ")});"
+					methods[ma].each_with_index { |m, i|
+						lookup_args = [BUILTIN_C_VAR_MAP[m[0]], BUILTIN_C_VAR_MAP[m[1]], compiler.sym(method_sym), arity]
+						res << "method_tbl[#{i}] = builtinopt_method_lookup(#{lookup_args.join(", ")});"
 					}
 					res << "}"
 					res << "switch(TYPE(recv)) {"
-					methods[ma].each { |m|
+					methods[ma].each_with_index { |m, i|
+						check =
+							if NO_CLASS_CHECK_BUILTINS.include? m[0]
+								"method_tbl[#{i}]"
+							else
+								"method_tbl[#{i}] && CLASS_OF(recv) == #{BUILTIN_C_VAR_MAP[m[0]]}"
+							end
 						res << "case #{BUILTIN_TYPE_MAP[m[0]]}:"
 						if (other = m[2])
 							if arity != 1
@@ -581,19 +582,18 @@ module Ruby2CExtension::Plugins
 							end
 							res << "switch(TYPE(argv[0])) {"
 							res << other.map { |o| "case #{BUILTIN_TYPE_MAP[o]}:" }.join("\n")
-							res << "if (buitinopt_method_tbl[#{m[3][0]}]) return (*(buitinopt_method_tbl[#{m[3][0]}]))(recv, argv[0]);"
+							res << "if (#{check}) return (*(method_tbl[#{i}]))(recv, argv[0]);"
 							res << "default:\ngoto std_call;"
 							res << "}"
 						else
-							res << "if (buitinopt_method_tbl[#{m[3][0]}])"
-							args = (0...arity).map { |i| "argv[#{i}]" }.join(", ")
+							args = (0...arity).map { |j| "argv[#{j}]" }.join(", ")
 							args = ", " + args unless args.empty?
-							res << "return (*(buitinopt_method_tbl[#{m[3][0]}]))(recv#{args});"
+							res << "if (#{check}) return (*(method_tbl[#{i}]))(recv#{args});"
 							res << "else goto std_call;"
 						end
 					}
 					res << "default:\nstd_call:"
-					res << "return rb_funcall3(recv, #{compiler.sym(method)}, #{arity}, #{arity > 0 ? "argv" : "0"});"
+					res << "return rb_funcall3(recv, #{compiler.sym(method_sym)}, #{arity}, #{arity > 0 ? "argv" : "0"});"
 					res << "}\n}"
 				}
 				res.join("\n")

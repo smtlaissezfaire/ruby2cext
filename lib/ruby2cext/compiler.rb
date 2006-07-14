@@ -24,6 +24,8 @@ module Ruby2CExtension
 		end
 
 		def to_c_code
+			plugins_global = @plugins.map { |plugin| plugin.global_c_code }
+			plugins_init = @plugins.map { |plugin| plugin.init_c_code }
 			res = [
 				"#include <ruby.h>",
 				"#include <node.h>",
@@ -35,7 +37,7 @@ module Ruby2CExtension
 				@global_man.to_c_code,
 			]
 			res.concat(@helpers.values.sort)
-			@plugins.each { |plugin| res << plugin.global_c_code }
+			res.concat(plugins_global)
 			res.concat(@funs)
 			res << "void Init_#{@name}() {"
 			res << "org_ruby_top_self = ruby_top_self;"
@@ -44,7 +46,7 @@ module Ruby2CExtension
 			res << "init_syms();"
 			res << "init_globals();"
 			res << "NODE *cref = rb_node_newnode(NODE_CREF, rb_cObject, 0, 0);"
-			@plugins.each { |plugin| res << plugin.init_c_code }
+			res.concat(plugins_init)
 			@toplevel_funs.each { |f| res << "#{f}(ruby_top_self, cref);" }
 			res << "}"
 			res.join("\n").split("\n").map { |l| l.strip }.reject { |l| l.empty? }.join("\n")
