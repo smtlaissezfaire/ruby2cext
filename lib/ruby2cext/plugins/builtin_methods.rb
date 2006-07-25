@@ -33,6 +33,26 @@ module Ruby2CExtension::Plugins
 
 		METHODS = {
 			:Array => [
+				[:[], 1, nil, nil, -1],
+				[:[], 2, nil, nil, -1],
+				[:first, 0, nil, nil, -1],
+				[:first, 1, nil, nil, -1],
+				[:insert, 2, nil, nil, -1],
+				[:insert, 3, nil, nil, -1],
+				[:join, 0, nil, nil, -1],
+				[:join, 1, nil, nil, -1],
+				[:last, 0, nil, nil, -1],
+				[:last, 1, nil, nil, -1],
+				[:push, 1, nil, nil, -1],
+				[:slice, 1, nil, nil, -1],
+				[:slice, 2, nil, nil, -1],
+				[:slice!, 1, nil, nil, -1],
+				[:slice!, 2, nil, nil, -1],
+				[:unshift, 1, nil, nil, -1],
+				[:values_at, 1, nil, nil, -1],
+				[:values_at, 2, nil, nil, -1],
+				[:values_at, 3, nil, nil, -1],
+				[:values_at, 4, nil, nil, -1],
 				[:clear, 0],
 				[:compact, 0],
 				[:compact!, 0],
@@ -80,6 +100,8 @@ module Ruby2CExtension::Plugins
 				[:=~, 1, :Kernel],
 			],
 			:Bignum => [
+				[:to_s, 0, nil, nil, -1],
+				[:to_s, 1, nil, nil, -1],
 				[:-@, 0],
 				[:abs, 0],
 				[:hash, 0],
@@ -148,6 +170,8 @@ module Ruby2CExtension::Plugins
 				[:eql?, 1, :Kernel],
 			],
 			:Fixnum => [
+				[:to_s, 0, nil, nil, -1],
+				[:to_s, 1, nil, nil, -1],
 				[:-@, 0],
 				[:abs, 0],
 				[:id2name, 0],
@@ -249,6 +273,12 @@ module Ruby2CExtension::Plugins
 				[:=~, 1, :Kernel],
 			],
 			:Hash => [
+				[:default, 0, nil, nil, -1],
+				[:default, 1, nil, nil, -1],
+				[:values_at, 1, nil, nil, -1],
+				[:values_at, 2, nil, nil, -1],
+				[:values_at, 3, nil, nil, -1],
+				[:values_at, 4, nil, nil, -1],
 				[:clear, 0],
 				[:default_proc, 0],
 				[:empty?, 0],
@@ -275,7 +305,6 @@ module Ruby2CExtension::Plugins
 				[:member?, 1],
 				[:replace, 1],
 				[:value?, 1],
-				[:[]=, 2],
 				[:store, 2],
 				[:entries, 0, :Enumerable],
 				[:frozen?, 0, :Kernel],
@@ -321,6 +350,46 @@ module Ruby2CExtension::Plugins
 				[:to_a, 0, :Kernel],
 			],
 			:String => [
+				[:[], 1, nil, nil, -1],
+				[:[], 2, nil, nil, -1],
+				[:center, 1, nil, nil, -1],
+				[:center, 2, nil, nil, -1],
+				[:chomp, 1, nil, nil, -1],
+				[:chomp, 2, nil, nil, -1],
+				[:chomp!, 1, nil, nil, -1],
+				[:chomp!, 2, nil, nil, -1],
+				[:count, 1, nil, nil, -1],
+				[:count, 2, nil, nil, -1],
+				[:count, 3, nil, nil, -1],
+				[:delete, 1, nil, nil, -1],
+				[:delete, 2, nil, nil, -1],
+				[:delete, 3, nil, nil, -1],
+				[:delete!, 1, nil, nil, -1],
+				[:delete!, 2, nil, nil, -1],
+				[:delete!, 3, nil, nil, -1],
+				[:index, 1, nil, nil, -1],
+				[:index, 2, nil, nil, -1],
+				[:ljust, 1, nil, nil, -1],
+				[:ljust, 2, nil, nil, -1],
+				[:rindex, 1, nil, nil, -1],
+				[:rindex, 2, nil, nil, -1],
+				[:rjust, 1, nil, nil, -1],
+				[:rjust, 2, nil, nil, -1],
+				[:slice, 1, nil, nil, -1],
+				[:slice, 2, nil, nil, -1],
+				[:slice!, 1, nil, nil, -1],
+				[:slice!, 2, nil, nil, -1],
+				[:split, 0, nil, nil, -1],
+				[:split, 1, nil, nil, -1],
+				[:split, 2, nil, nil, -1],
+				[:squeeze, 1, nil, nil, -1],
+				[:squeeze, 2, nil, nil, -1],
+				[:squeeze, 3, nil, nil, -1],
+				[:squeeze!, 1, nil, nil, -1],
+				[:squeeze!, 2, nil, nil, -1],
+				[:squeeze!, 3, nil, nil, -1],
+				[:to_i, 0, nil, nil, -1],
+				[:to_i, 1, nil, nil, -1],
 				[:capitalize, 0],
 				[:capitalize!, 0],
 				[:chop, 0],
@@ -456,7 +525,6 @@ module Ruby2CExtension::Plugins
 			:|   => "builtinoptop_or",
 			:^   => "builtinoptop_xor",
 			:[]  => "builtinoptop_aref",
-			:[]= => "builtinoptop_aset",
 			:<<  => "builtinoptop_lshift",
 			:>>  => "builtinoptop_rshift",
 		})
@@ -479,11 +547,11 @@ module Ruby2CExtension::Plugins
 		def initialize(compiler, builtins)
 			super(compiler)
 			builtins = SUPPORTED_BUILTINS & builtins # "sort" and unique
-			@methods = {} # [meth_sym, arity] => # [[type, impl. class/mod, types of first arg or nil], ...]
+			@methods = {} # [meth_sym, arity] => # [[type, impl. class/mod, types of first arg or nil, real arity], ...]
 			@function_names = {} # [meth_sym, arity] => name # initialized on first use
 			builtins.each { |builtin|
 				(METHODS[builtin] + COMMON_METHODS).each { |arr|
-					(@methods[arr[0, 2]] ||= []) << [builtin, arr[2] || builtin, arr[3]]
+					(@methods[arr[0, 2]] ||= []) << [builtin, arr[2] || builtin, arr[3], arr[4] || arr[1]]
 				}
 			}
 			compiler.add_preprocessor(:call) { |cfun, node|
@@ -563,7 +631,7 @@ module Ruby2CExtension::Plugins
 					res << "if (!lookup_done) {"
 					res << "lookup_done = 1;"
 					methods[ma].each_with_index { |m, i|
-						lookup_args = [BUILTIN_C_VAR_MAP[m[0]], BUILTIN_C_VAR_MAP[m[1]], compiler.sym(method_sym), arity]
+						lookup_args = [BUILTIN_C_VAR_MAP[m[0]], BUILTIN_C_VAR_MAP[m[1]], compiler.sym(method_sym), m[3]]
 						res << "method_tbl[#{i}] = builtinopt_method_lookup(#{lookup_args.join(", ")});"
 					}
 					res << "}"
@@ -575,6 +643,14 @@ module Ruby2CExtension::Plugins
 							else
 								"method_tbl[#{i}] && CLASS_OF(recv) == #{BUILTIN_C_VAR_MAP[m[0]]}"
 							end
+						call =
+							if m[3] == -1
+								"(*(method_tbl[#{i}]))(#{arity}, #{arity > 0 ? "argv" : "NULL"}, recv)"
+							else
+								args = (0...arity).map { |j| "argv[#{j}]" }.join(", ")
+								args = ", " + args unless args.empty?
+								"(*(method_tbl[#{i}]))(recv#{args})"
+							end
 						res << "case #{BUILTIN_TYPE_MAP[m[0]]}:"
 						if (other = m[2])
 							if arity != 1
@@ -582,13 +658,11 @@ module Ruby2CExtension::Plugins
 							end
 							res << "switch(TYPE(argv[0])) {"
 							res << other.map { |o| "case #{BUILTIN_TYPE_MAP[o]}:" }.join("\n")
-							res << "if (#{check}) return (*(method_tbl[#{i}]))(recv, argv[0]);"
+							res << "if (#{check}) return #{call};"
 							res << "default:\ngoto std_call;"
 							res << "}"
 						else
-							args = (0...arity).map { |j| "argv[#{j}]" }.join(", ")
-							args = ", " + args unless args.empty?
-							res << "if (#{check}) return (*(method_tbl[#{i}]))(recv#{args});"
+							res << "if (#{check}) return #{call};"
 							res << "else goto std_call;"
 						end
 					}

@@ -8,7 +8,9 @@ classes = [
 	Float, String, Regexp, Array, Fixnum, Hash, Bignum,
 	#Struct, ???
 	#File, rb_cIO and rb_cFile conflict
-	TrueClass, FalseClass, MatchData, Symbol,
+	TrueClass, FalseClass,
+	#MatchData,
+	Symbol,
 ].sort_by { |c| c.name }
 
 def method_info(meth, klass)
@@ -45,12 +47,13 @@ taboo_methods =
 	(Enumerable.instance_methods - ["entries", "include?", "member?", "to_a"])+
 	(Precision.instance_methods)+
 	["each"]
+
 first = true
 common = []
 all = classes.map { |klass|
 	meths = ((klass.instance_methods - taboo_methods).map { |ms|
 		method_info(klass.instance_method(ms), klass)
-	}.select { |mi| mi[1] >= 0 }.sort_by { |mi| [mi[2].to_s, mi[1], mi[0].to_s] })
+	}.select { |mi| mi[1] >= -1 }.sort_by { |mi| [mi[2].to_s, mi[1], mi[0].to_s] })
 	if first
 		common = meths
 		first = false
