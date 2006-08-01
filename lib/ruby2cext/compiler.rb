@@ -170,8 +170,7 @@ module Ruby2CExtension
 				cflags = [conf["CCDLFLAGS"], conf["CFLAGS"], conf["ARCH_FLAG"]].join(" ")
 				hdrdir = conf["archdir"]
 				dlext = conf["DLEXT"]
-				libs = [conf["LIBRUBYARG"], conf["LIBS"], conf["DLDLIBS"]].join(" ")
-				cmd = "#{ldshared} #{cflags} -I. -I #{hdrdir} -o #{file_basename}.#{dlext} #{file_basename}.c #{libs}"
+				cmd = "#{ldshared} #{cflags} -I. -I #{hdrdir} -o #{file_basename}.#{dlext} #{file_basename}.c"
 				if RUBY_PLATFORM =~ /mswin32/
 					cmd << " -link /INCREMENTAL:no /EXPORT:Init_#{name}"
 				end
