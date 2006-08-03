@@ -63,7 +63,7 @@ module Ruby2CExtension
 
 		def get_global_entry(vid)
 			g_entry = "(VALUE)rb_global_entry(#{sym(vid)})"
-			"(struct global_entry*)(#{global(g_entry, false)})"
+			"(struct global_entry*)(#{global_const(g_entry, false)})"
 		end
 
 		def make_block(block)
@@ -285,14 +285,14 @@ module Ruby2CExtension
 			when Symbol
 				"ID2SYM(#{sym(l)})"
 			when Bignum
-				global("rb_cstr_to_inum(#{l.to_s.to_c_strlit}, 10, Qfalse)")
+				global_const("rb_cstr_to_inum(#{l.to_s.to_c_strlit}, 10, Qfalse)")
 			when Float
-				global("rb_float_new(%.40e)" % l)
+				global_const("rb_float_new(%.40e)" % l)
 			when Range
-				global("rb_range_new(#{comp_lit(:lit=>l.first)}, #{comp_lit(:lit=>l.last)}, Q#{l.exclude_end?})")
+				global_const("rb_range_new(#{comp_lit(:lit=>l.first)}, #{comp_lit(:lit=>l.last)}, Q#{l.exclude_end?})")
 			when Regexp
 				s = l.source
-				global("rb_reg_new(#{s.to_c_strlit}, #{s.size}, #{l.options})")
+				global_const("rb_reg_new(#{s.to_c_strlit}, #{s.size}, #{l.options})")
 			else
 				raise Ruby2CExtError::Bug, "unsupported literal type: #{l.inspect}"
 			end
@@ -1078,7 +1078,7 @@ module Ruby2CExtension
 		end
 
 		def comp_str(hash)
-			lit = global("rb_str_new(#{hash[:lit].to_c_strlit}, #{hash[:lit].size})")
+			lit = global_const("rb_str_new(#{hash[:lit].to_c_strlit}, #{hash[:lit].size})")
 			"rb_str_new3(#{lit})"
 		end
 		def comp_evstr(hash)

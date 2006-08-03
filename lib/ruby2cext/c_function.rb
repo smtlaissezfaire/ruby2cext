@@ -27,7 +27,12 @@ module Ruby2CExtension
 			# some redirects to compiler
 			def un(str); compiler.un(str); end
 			def sym(sym); compiler.sym(sym); end
-			def global(str, register_gc = true); compiler.global(str, register_gc); end
+			def global_const(str, register_gc = true)
+				compiler.global_const(str, register_gc)
+			end
+			def global_var(str)
+				compiler.global_var(str)
+			end
 			def add_helper(str); compiler.add_helper(str); end
 
 			def get_lines
@@ -298,19 +303,11 @@ module Ruby2CExtension
 								rb_raise(rb_eTypeError, "def for \\"%s\\" can only be used once", rb_id2name(mid));
 							}
 						EOC
-						c_scope {
-							l "static int done = 0;"
-							l "if (done) def_only_once(#{sym(mid)});"
-							l "#{cf.cref_global_var} = (VALUE)(#{get_cref});"
-							l "done = 1;"
-							l "#{def_fun}(#{class_var}, #{mid.to_s.to_c_strlit}, #{fname}, -1);"
-						}
-					}
-				else
-					outer.instance_eval {
-						l "#{def_fun}(#{class_var}, #{mid.to_s.to_c_strlit}, #{fname}, -1);"
+						l "if (#{cf.cref_global_var}) def_only_once(#{sym(mid)});"
+						l "#{cf.cref_global_var} = (VALUE)(#{get_cref});"
 					}
 				end
+				outer.l "#{def_fun}(#{class_var}, #{mid.to_s.to_c_strlit}, #{fname}, -1);"
 				"Qnil"
 			end
 
@@ -323,7 +320,7 @@ module Ruby2CExtension
 			end
 
 			def get_cref_impl
-				@cref_global_var ||= global("Qfalse")
+				@cref_global_var ||= global_var("Qfalse")
 				"(RNODE(#{@cref_global_var}))"
 			end
 			attr_reader :cref_global_var

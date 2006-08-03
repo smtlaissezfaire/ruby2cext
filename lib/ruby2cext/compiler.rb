@@ -93,8 +93,11 @@ module Ruby2CExtension
 		def sym(sym)
 			@sym_man.get(sym)
 		end
-		def global(str, register_gc = true)
-			@global_man.get(str, register_gc)
+		def global_const(str, register_gc = true)
+			@global_man.get(str, true, register_gc)
+		end
+		def global_var(str)
+			@global_man.get(str, false, true)
 		end
 
 		def log(str, force = false)

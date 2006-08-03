@@ -33,14 +33,21 @@ module Ruby2CExtension
 			def initialize
 				@cnt = 0
 				@src = []
+				@reusable = {}
 			end
 
 			# returns the var name for sym
-			def get(str, register_gc)
+			def get(str, allow_reuse, register_gc)
+				if allow_reuse && (name = @reusable[str])
+					return name
+				end
 				name = "global[#{@cnt}]"
 				@cnt += 1
 				@src << "#{name} = #{str};"
 				@src << "rb_global_variable(&(#{name}));" if register_gc
+				if allow_reuse
+					@reusable[str] = name
+				end
 				name
 			end
 
