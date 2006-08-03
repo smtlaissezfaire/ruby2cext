@@ -27,7 +27,7 @@ module Ruby2CExtension
 			# some redirects to compiler
 			def un(str); compiler.un(str); end
 			def sym(sym); compiler.sym(sym); end
-			def global(str); compiler.global(str); end
+			def global(str, register_gc = true); compiler.global(str, register_gc); end
 			def add_helper(str); compiler.add_helper(str); end
 
 			def get_lines

@@ -36,10 +36,11 @@ module Ruby2CExtension
 			end
 
 			# returns the var name for sym
-			def get(str)
+			def get(str, register_gc)
 				name = "global[#{@cnt}]"
 				@cnt += 1
-				@src << "#{name} = #{str};" << "rb_global_variable(&(#{name}));"
+				@src << "#{name} = #{str};"
+				@src << "rb_global_variable(&(#{name}));" if register_gc
 				name
 			end
 

@@ -61,6 +61,11 @@ module Ruby2CExtension
 			}
 		end
 
+		def get_global_entry(vid)
+			g_entry = "(VALUE)rb_global_entry(#{sym(vid)})"
+			"(struct global_entry*)(#{global(g_entry, false)})"
+		end
+
 		def make_block(block)
 			if block
 				block.first == :block ? block : [:block, [block]]
@@ -805,7 +810,7 @@ module Ruby2CExtension
 					when /\A@/
 						"rb_ivar_defined(#{get_self}, #{sym(aid)})"
 					when /\A\$/
-						"rb_gvar_defined(rb_global_entry(#{sym(aid)}))"
+						"rb_gvar_defined(#{get_global_entry(aid)})"
 					else
 						raise Ruby2CExtError::Bug, "unexpected aid for op_asgn_or: #{aid.inspect}"
 					end
@@ -905,8 +910,7 @@ module Ruby2CExtension
 		end
 		def comp_gasgn(hash)
 			assign_res(comp(hash[:value]))
-			# TODO: store global entries somewhere ??? (would save one st_lookup)
-			l "rb_gvar_set(rb_global_entry(#{sym(hash[:vid])}), res);"
+			l "rb_gvar_set(#{get_global_entry(hash[:vid])}, res);"
 			"res"
 		end
 		def comp_iasgn(hash)
@@ -973,8 +977,7 @@ module Ruby2CExtension
 			scope.get_dvar(hash[:vid])
 		end
 		def comp_gvar(hash)
-			# store global entries somewhere ??? (would save one st_lookup)
-			"rb_gvar_get(rb_global_entry(#{sym(hash[:vid])}))"
+			"rb_gvar_get(#{get_global_entry(hash[:vid])})"
 		end
 		def comp_ivar(hash)
 			"rb_ivar_get(#{get_self}, #{sym(hash[:vid])})"
@@ -1260,7 +1263,7 @@ module Ruby2CExtension
 			when :dvar
 				'"local-variable(in-block)"'
 			when :gvar
-				"(rb_gvar_defined(rb_global_entry(#{sym(hhash[:vid])})) ? \"global-variable\" : 0)"
+				"(rb_gvar_defined(#{get_global_entry(hhash[:vid])}) ? \"global-variable\" : 0)"
 			when :ivar
 				"(rb_ivar_defined(#{get_self}, #{sym(hhash[:vid])}) ? \"instance-variable\" : 0)"
 			when :const
