@@ -145,24 +145,26 @@ module Ruby2CExtension
 			when String
 				node
 			else
-				l "/* #{node.first} */"
+				ntype = node.first
+				orig_node = node
+				l "/* #{ntype} */"
 				begin
-					if (pps = compiler.preprocessors_for(node.first))
-						pp_node = node
+					if (pps = compiler.preprocessors_for(ntype))
+						# apply each preprocessor until one returns a string or
+						# a different node type
 						pps.each { |pp_proc|
-							pp_node = pp_proc[self, pp_node]
-							break unless Array === pp_node
+							node = pp_proc[self, node]
+							break unless Array === node && node.first == ntype
 						}
-						if Array === pp_node
-							send("comp_#{pp_node.first}", pp_node.last)
-						else
-							pp_node
-						end
+					end
+					if Array === node && node.first == ntype
+						send("comp_#{ntype}", node.last)
 					else
-						send("comp_#{node.first}", node.last)
+						# retry with the result of preprocessing
+						comp(node)
 					end
 				rescue Ruby2CExtError => e
-					if Hash === node.last && (n = node.last[:node])
+					if Hash === orig_node.last && (n = orig_node.last[:node])
 						# add file and line to message
 						raise "#{n.file}:#{n.line}: #{e}"
 					else
