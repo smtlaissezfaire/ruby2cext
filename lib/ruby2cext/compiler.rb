@@ -1,6 +1,7 @@
 
 require "rubynode"
 require "ruby2cext/parser"
+require "ruby2cext/error"
 require "ruby2cext/tools"
 require "ruby2cext/c_function"
 
@@ -14,6 +15,7 @@ module Ruby2CExtension
 			@name = name
 			@verbose = verbose
 			@funs = []
+			@funs_reuseable = {}
 			@toplevel_funs = []
 			@sym_man = Tools::SymbolManager.new
 			@global_man = Tools::GlobalManager.new
@@ -110,8 +112,22 @@ module Ruby2CExtension
 			@helpers[str] ||= str
 		end
 
-		def add_fun(str)
-			@funs << str
+		def add_fun(code, base_name)
+			unless (name = @funs_reuseable[code])
+				name = un(base_name)
+				lines = code.split("\n")
+				unless lines.shift =~ /^\s*static / # first line needs static
+					raise Ruby2CExtError::Bug, "trying to add a non static function"
+				end
+				if lines.grep(/^\s*static /).empty? # only reuseably without static variables
+					@funs_reuseable[code] = name
+				end
+				unless code.sub!("FUNNAME", name)
+					raise Ruby2CExtError::Bug, "trying to add a function without FUNNAME"
+				end
+				@funs << code
+			end
+			name
 		end
 
 		def add_plugin(plugin_class, *args)

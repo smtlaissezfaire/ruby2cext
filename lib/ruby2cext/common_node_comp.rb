@@ -459,9 +459,8 @@ module Ruby2CExtension
 					arg_types.each_with_index { |arg_type, i|
 						iter_data_cast << "(#{arg_type})(iter_data[#{i + 1}])"
 					}
-					it_fun = un("iterate")
-					compiler.add_fun(<<-EOC.chomp % iter_data_cast)
-						static VALUE #{it_fun}(VALUE data) {
+					it_fun = compiler.add_fun(<<-EOC.chomp % iter_data_cast, "iterate")
+						static VALUE FUNNAME(VALUE data) {
 							VALUE *iter_data = (VALUE*)data;
 							ruby_top_self = org_ruby_top_self;
 							if (iter_data[0]) return Qundef;
@@ -586,16 +585,14 @@ module Ruby2CExtension
 			ensure_node_type(resb = hash[:resq], :resbody)
 			# compile the real body
 			cflow_hash = {}
-			body = un("rescue_body")
-			CFunction::Wrap.compile(self, body, cflow_hash) { |cf|
+			body = CFunction::Wrap.compile(self, "rescue_body", cflow_hash) { |cf|
 				cf.instance_eval {
 					l "#{get_wrap_ptr}->state |= 1;"
 					comp(hash[:head])
 				}
 			}
-			res_bodies = un("rescue_resbodies")
 			# now all the resbodies in one c function
-			CFunction::Wrap.compile(self, res_bodies, cflow_hash) { |cf|
+			res_bodies = CFunction::Wrap.compile(self, "rescue_resbodies", cflow_hash) { |cf|
 				cf.instance_eval {
 					cnt = 0
 					while resb
@@ -671,11 +668,9 @@ module Ruby2CExtension
 		end
 
 		def comp_ensure(hash)
-			b = un("ensure_body")
-			e = un("ensure_ensure")
 			cflow_hash = {}
-			CFunction::Wrap.compile(self, b, cflow_hash) { |cf| cf.comp(hash[:head]) }
-			CFunction::Wrap.compile(self, e) { |cf| cf.comp(hash[:ensr]) } # ensr without cflow
+			b = CFunction::Wrap.compile(self, "ensure_body", cflow_hash) { |cf| cf.comp(hash[:head]) }
+			e = CFunction::Wrap.compile(self, "ensure_ensure") { |cf| cf.comp(hash[:ensr]) } # ensr without cflow
 			ensr_code = "rb_ensure(#{b}, (VALUE)#{get_wrap_ptr}, #{e}, (VALUE)#{get_wrap_ptr})"
 			if cflow_hash.empty?
 				ensr_code

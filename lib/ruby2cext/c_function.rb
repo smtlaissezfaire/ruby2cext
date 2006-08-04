@@ -236,7 +236,6 @@ module Ruby2CExtension
 			def self.compile(outer, scope_node, class_mod_var)
 				ensure_node_type(scope_node, :scope)
 				cf = self.new(outer.compiler, Scopes::Scope.new(scope_node.last[:tbl]))
-				fname = cf.un("class_module_scope")
 				cf.instance_eval {
 					block = make_block(scope_node.last[:next])
 					l "return #{comp(block)};"
@@ -245,8 +244,8 @@ module Ruby2CExtension
 				args = []
 				args << "VALUE self" if cf.need_self
 				args << "NODE *cref" if cf.need_cref
-				sig = "static VALUE #{fname}(#{args.join(", ")}) {"
-				cf.compiler.add_fun("#{sig}\n#{body}\n}")
+				sig = "static VALUE FUNNAME(#{args.join(", ")}) {"
+				fname = cf.compiler.add_fun("#{sig}\n#{body}\n}", "class_module_scope")
 				outer.instance_eval {
 					args = []
 					args << class_mod_var if cf.need_self
@@ -266,15 +265,13 @@ module Ruby2CExtension
 			def self.compile(compiler, scope_node, private_vmode = true)
 				ensure_node_type(scope_node, :scope)
 				cf = self.new(compiler, Scopes::Scope.new(scope_node.last[:tbl], private_vmode))
-				fname = cf.un("toplevel_scope")
 				cf.instance_eval {
 					block = make_block(scope_node.last[:next])
 					l "#{comp(block)};"
 				}
 				body = "#{cf.init_c_code}\n#{cf.get_lines}"
-				sig = "static void #{fname}(VALUE self, NODE *cref) {"
-				cf.compiler.add_fun("#{sig}\n#{body}\n}")
-				fname
+				sig = "static void FUNNAME(VALUE self, NODE *cref) {"
+				cf.compiler.add_fun("#{sig}\n#{body}\n}", "toplevel_scope") # and return the function name
 			end
 		end
 
@@ -282,7 +279,6 @@ module Ruby2CExtension
 			def self.compile(outer, scope_node, def_fun, class_var, mid)
 				ensure_node_type(scope_node, :scope)
 				cf = self.new(outer.compiler, Scopes::Scope.new(scope_node.last[:tbl]))
-				fname = cf.un("method_#{mid.to_s.gsub(/\W+/m, "")}")
 				cf.instance_eval {
 					block = [:block, make_block(scope_node.last[:next]).last.dup] # dup the block to allow modification
 					arg = block.last.shift
@@ -294,8 +290,8 @@ module Ruby2CExtension
 					l "return #{comp(block)};"
 				}
 				body = "#{cf.init_c_code}\n#{cf.get_lines}"
-				sig = "static VALUE #{fname}(int argc, VALUE *argv, VALUE self) {"
-				cf.compiler.add_fun("#{sig}\n#{body}\n}")
+				sig = "static VALUE FUNNAME(int argc, VALUE *argv, VALUE self) {"
+				fname = cf.compiler.add_fun("#{sig}\n#{body}\n}", "method")
 				if cf.need_cref
 					outer.instance_eval {
 						add_helper <<-EOC
@@ -330,7 +326,6 @@ module Ruby2CExtension
 			def self.compile(outer, block_node, var_node)
 				ensure_node_type(block_node, :block)
 				cf = self.new(outer.compiler, outer.scope.new_dyna_scope)
-				fname = cf.un("block")
 				cf.instance_eval {
 					if Array === var_node
 						if var_node.first == :masgn
@@ -364,8 +359,8 @@ module Ruby2CExtension
 					l "return #{comp_block(block_node.last)};"
 				}
 				body = "#{cf.init_c_code(outer)}\n#{cf.get_lines}"
-				sig = "static VALUE #{fname}(VALUE bl_val, VALUE closure_ary, VALUE bl_self) {"
-				cf.compiler.add_fun("#{sig}\n#{body}\n}")
+				sig = "static VALUE FUNNAME(VALUE bl_val, VALUE closure_ary, VALUE bl_self) {"
+				fname = cf.compiler.add_fun("#{sig}\n#{body}\n}", "block")
 				[fname, cf.need_closure_ptr]
 			end
 
@@ -442,7 +437,7 @@ module Ruby2CExtension
 
 		class Wrap < Base
 
-			def self.compile(outer, fname, cflow_hash = nil)
+			def self.compile(outer, base_name, cflow_hash = nil)
 				cf = self.new(outer, cflow_hash)
 				cf.instance_eval {
 					if cf.cflow_hash
@@ -451,10 +446,9 @@ module Ruby2CExtension
 					l "return #{yield cf};"
 				}
 				body = "#{cf.init_c_code}\n#{cf.get_lines}"
-				sig = "static VALUE #{fname}(struct wrap *wrap_ptr) {"
-				cf.compiler.add_fun("#{sig}\n#{body}\n}")
+				sig = "static VALUE FUNNAME(struct wrap *wrap_ptr) {"
 				outer.need_wrap = true
-				nil
+				cf.compiler.add_fun("#{sig}\n#{body}\n}", base_name) # and return the function name
 			end
 
 			attr_reader :base_cfun, :outer_cfun, :cflow_hash
