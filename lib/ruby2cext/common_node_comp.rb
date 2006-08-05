@@ -46,15 +46,13 @@ module Ruby2CExtension
 
 		def c_static_once
 			c_scope_res {
-				l "static int static_once_done = 0;"
-				l "static VALUE static_once_value;"
-				c_if("!static_once_done") {
+				l "static VALUE static_once_value = Qundef;"
+				c_if("static_once_value == Qundef") {
 					assign_res(yield)
 					# other thread might have been faster
-					c_if("!static_once_done") {
+					c_if("static_once_value == Qundef") {
 						l "static_once_value = res;"
 						l "rb_global_variable(&static_once_value);"
-						l "static_once_done = 1;"
 					}
 				}
 				"static_once_value"
@@ -200,14 +198,11 @@ module Ruby2CExtension
 				build_c_arr(args.last, "argv")
 			else
 				l "int argc; VALUE *argv;"
-				c_scope {
-					l "VALUE args;"
-					l "args = #{comp(args)};"
-					l "if (TYPE(args) != T_ARRAY) args = rb_ary_to_ary(args);"
-					l "argc = RARRAY(args)->len;"
-					l "argv = ALLOCA_N(VALUE, argc);"
-					l "MEMCPY(argv, RARRAY(args)->ptr, VALUE, argc);"
-				}
+				assign_res(comp(args))
+				l "if (TYPE(res) != T_ARRAY) res = rb_ary_to_ary(res);"
+				l "argc = RARRAY(res)->len;"
+				l "argv = ALLOCA_N(VALUE, argc);"
+				l "MEMCPY(argv, RARRAY(res)->ptr, VALUE, argc);"
 			end
 		end
 
@@ -1011,12 +1006,9 @@ module Ruby2CExtension
 			mid = hash[:mid]
 			if mid.to_s[0,1].downcase != mid.to_s[0,1] # then it is a constant
 				helper_class_module_check
-				c_scope_res {
-					l "VALUE tmp_class;"
-					l "tmp_class = #{comp(hash[:head])};"
-					l "class_module_check(tmp_class);"
-					"rb_const_get_from(tmp_class, #{sym(mid)})"
-				}
+				assign_res(comp(hash[:head]))
+				l "class_module_check(res);"
+				"rb_const_get_from(res, #{sym(mid)})"
 			else
 				"rb_funcall(#{comp(hash[:head])}, #{sym(mid)}, 0, 0)"
 			end
