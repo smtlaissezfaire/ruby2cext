@@ -375,7 +375,7 @@ module Ruby2CExtension
 			}
 		end
 
-		def handle_when(hash, test_str)
+		def handle_when(hash, test_proc)
 			ensure_node_type(head = hash[:head], :array)
 			c_scope_res {
 				l "int when_handle = 1;"
@@ -385,14 +385,14 @@ module Ruby2CExtension
 						l "arr = #{comp(check.last[:head])};"
 						l "if (TYPE(arr) != T_ARRAY) arr = rb_ary_to_ary(arr);"
 						c_for("i = 0; i < RARRAY(arr)->len; ++i") {
-							c_if("RTEST(#{test_str % "RARRAY(arr)->ptr[i]"})") {
+							c_if("RTEST(#{test_proc["RARRAY(arr)->ptr[i]"]})") {
 								l "arr = Qfalse;"
 								l "break;"
 							}
 						}
 						l "if (RTEST(arr)) {"
 					else
-						l "if (!RTEST(#{test_str % comp(check)})) {"
+						l "if (!RTEST(#{test_proc[check]})) {"
 					end
 				}
 				l "when_handle = 0;" # here all checks failed
@@ -402,7 +402,7 @@ module Ruby2CExtension
 				}
 				c_else {
 					if hash[:next] && hash[:next].first == :when
-						assign_res(handle_when(hash[:next].last, test_str))
+						assign_res(handle_when(hash[:next].last, test_proc))
 					else
 						assign_res(comp(hash[:next]))
 					end
@@ -411,14 +411,18 @@ module Ruby2CExtension
 			}
 		end
 		def comp_when(hash)
-			handle_when(hash, "%s")
+			handle_when(hash, proc { |val| comp(val) })
 		end
 		def comp_case(hash)
 			ensure_node_type(hash[:body], :when)
 			c_scope_res {
 				l "VALUE case_val;"
 				l "case_val = #{comp(hash[:head])};"
-				handle_when(hash[:body].last, "rb_funcall2(%s, #{sym(:===)}, 1, &case_val)")
+				handle_when(hash[:body].last, proc { |val|
+					# Ruby 1.8.4 actually uses rb_funcall2, but a :call node
+					# (which uses rb_funcall3) is more correct
+					comp([:call, {:mid => :===, :recv => val, :args => [:array, ["case_val"]]}])
+				})
 			}
 		end
 
