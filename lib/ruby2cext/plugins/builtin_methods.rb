@@ -559,6 +559,54 @@ module Ruby2CExtension::Plugins
 			}
 		end
 
+		def deduce_type(node)
+			if Array === node
+				case node.first
+				when :lit
+					node.last[:lit].class.name.to_sym
+				when :nil
+					:NilClass
+				when :false
+					:FalseClass
+				when :true
+					:TrueClass
+				when :str, :dstr
+					:String
+				when :dsym
+					:Symbol
+				when :array, :zarray
+					:Array
+				when :hash
+					:Hash
+				when :dregx, :dregx_once
+					:Regexp
+				else
+					nil
+				end
+			else
+				nil
+			end
+		end
+
+		def get_function(method, arity, recv_type)
+			mat = [method, arity, recv_type]
+			if (fn = function_names[mat])
+				fn
+			elsif (meth_list = methods[[method, arity]])
+				if recv_type
+					if meth_list.find { |arr| arr.first == recv_type }
+						function_names[mat] = "#{METHOD_NAME_MAPPINGS[method]}__#{arity}_#{recv_type}"
+					else
+						nil # we can't optimize this recv_type/method combination
+					end
+				else
+					function_names[mat] = "#{METHOD_NAME_MAPPINGS[method]}__#{arity}"
+				end
+			else
+				nil
+			end
+		end
+
 		def handle_call(cfun, hash, node)
 			args = []
 			if hash[:args]
@@ -568,7 +616,7 @@ module Ruby2CExtension::Plugins
 					return node
 				end
 			end
-			if (fun = get_function(hash[:mid], args.size))
+			if (fun = get_function(hash[:mid], args.size, deduce_type(hash[:recv])))
 				cfun.instance_eval {
 					recv = comp(hash[:recv])
 					if args.empty?
@@ -583,18 +631,6 @@ module Ruby2CExtension::Plugins
 				}
 			else
 				node
-			end
-		end
-
-		def get_function(method, arity)
-			ma = [method, arity]
-			if (fn = function_names[ma])
-				return fn
-			end
-			if methods[ma]
-				function_names[ma] = "#{METHOD_NAME_MAPPINGS[method]}__#{arity}"
-			else
-				nil
 			end
 		end
 
@@ -623,22 +659,27 @@ module Ruby2CExtension::Plugins
 				res = []
 				res << "typedef VALUE (*BUILTINOPT_FP)(ANYARGS);"
 				res << METHOD_LOOKUP_CODE
-				function_names.sort_by { |ma, name| name }.each { |ma, name|
-					method_sym, arity = *ma
+				function_names.sort_by { |mat, name| name }.each { |mat, name|
+					method_sym, arity, recv_type = *mat
+					meth_list = methods[[method_sym, arity]]
+					if recv_type
+						meth_list = [meth_list.find { |arr| arr.first == recv_type }]
+					end
 					res << "static VALUE #{name}(VALUE recv#{arity > 0 ? ", VALUE *argv" : ""}) {"
-					res << "static BUILTINOPT_FP method_tbl[#{methods[ma].size}];"
+					res << "static BUILTINOPT_FP method_tbl[#{meth_list.size}];"
 					res << "static int lookup_done = 0;"
 					res << "if (!lookup_done) {"
 					res << "lookup_done = 1;"
-					methods[ma].each_with_index { |m, i|
+					meth_list.each_with_index { |m, i|
 						lookup_args = [BUILTIN_C_VAR_MAP[m[0]], BUILTIN_C_VAR_MAP[m[1]], compiler.sym(method_sym), m[3]]
 						res << "method_tbl[#{i}] = builtinopt_method_lookup(#{lookup_args.join(", ")});"
 					}
 					res << "}"
-					res << "switch(TYPE(recv)) {"
-					methods[ma].each_with_index { |m, i|
+					res << "switch(TYPE(recv)) {" unless recv_type
+					meth_list.each_with_index { |m, i|
+						res << "case #{BUILTIN_TYPE_MAP[m[0]]}:" unless recv_type
 						check =
-							if NO_CLASS_CHECK_BUILTINS.include? m[0]
+							if recv_type || NO_CLASS_CHECK_BUILTINS.include?(m[0])
 								"method_tbl[#{i}]"
 							else
 								"method_tbl[#{i}] && CLASS_OF(recv) == #{BUILTIN_C_VAR_MAP[m[0]]}"
@@ -651,7 +692,6 @@ module Ruby2CExtension::Plugins
 								args = ", " + args unless args.empty?
 								"(*(method_tbl[#{i}]))(recv#{args})"
 							end
-						res << "case #{BUILTIN_TYPE_MAP[m[0]]}:"
 						if (other = m[2])
 							if arity != 1
 								raise Ruby2CExtension::Ruby2CExtError::Bug, "arity must be 1 for arg type check"
@@ -659,16 +699,18 @@ module Ruby2CExtension::Plugins
 							res << "switch(TYPE(argv[0])) {"
 							res << other.map { |o| "case #{BUILTIN_TYPE_MAP[o]}:" }.join("\n")
 							res << "if (#{check}) return #{call};"
-							res << "default:\ngoto std_call;"
+							res << "default:"
+							res << (recv_type ? ";" : "goto std_call;")
 							res << "}"
 						else
 							res << "if (#{check}) return #{call};"
-							res << "else goto std_call;"
+							res << "else goto std_call;" unless recv_type
 						end
 					}
-					res << "default:\nstd_call:"
+					res << "default:\nstd_call:" unless recv_type
 					res << "return rb_funcall3(recv, #{compiler.sym(method_sym)}, #{arity}, #{arity > 0 ? "argv" : "0"});"
-					res << "}\n}"
+					res << "}" unless recv_type
+					res << "}"
 				}
 				res.join("\n")
 			end
