@@ -31,10 +31,14 @@ end)
 def m(a)
 	p a
 end
-m 1
+m 1 + 2
+m [1,2,3].first
+m 2.between?(1, 5)
 p method(:m)
 
 p [1111111111111222222333345342323, /ab/i, /cd/m, /xx/n]
+
+__send__(:p, true.__id__, false.__send__(:inspect), "abc".__send__(:[], 1), 2.equal?(3), nil.nil?, 1.nil?)
 
 a="hello"
 def a.a
@@ -58,7 +62,7 @@ case
 when 1 == 1
 	p "woo"
 when *[false, true]
-	p 1
+	p (1..3).inspect
 else
 	p "uhh"
 end

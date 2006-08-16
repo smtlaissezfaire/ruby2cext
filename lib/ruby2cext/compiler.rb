@@ -172,6 +172,8 @@ module Ruby2CExtension
 				c.add_plugin(Plugins::Warnings)
 				require "ruby2cext/plugins/const_cache"
 				c.add_plugin(Plugins::ConstCache)
+				require "ruby2cext/plugins/inline_methods"
+				c.add_plugin(Plugins::InlineMethods)
 				require "ruby2cext/plugins/builtin_methods"
 				c.add_plugin(Plugins::BuiltinMethods, Plugins::BuiltinMethods::SUPPORTED_BUILTINS)
 				require "ruby2cext/plugins/require_include"
