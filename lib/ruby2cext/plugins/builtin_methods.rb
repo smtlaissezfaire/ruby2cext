@@ -542,13 +542,19 @@ module Ruby2CExtension::Plugins
 			h[k] = "rb_#{Module.const_get(k).instance_of?(Module) ? "m" : "c"}#{k}"
 		}
 
-		attr_reader :methods, :function_names
+		attr_reader :methods
 
 		def initialize(compiler, builtins)
 			super(compiler)
 			builtins = SUPPORTED_BUILTINS & builtins # "sort" and unique
 			@methods = {} # [meth_sym, arity] => # [[type, impl. class/mod, types of first arg or nil, real arity], ...]
 			@function_names = {} # [meth_sym, arity] => name # initialized on first use
+			@typed_function_infos = {} # [meth_sym, arity, recv_type] => [fun_ptr, real_arity, first_arg_types] # initialized on first use
+			@fallback_functions = {} # [meth_sym, real_arity] => name
+			@functions_code = [] # source code of the replacement functions
+			@fallback_functions_code = [] # source code of the fallback functions
+			@method_tbl_size = 0
+			@init_code = []
 			builtins.each { |builtin|
 				(METHODS[builtin] + COMMON_METHODS).each { |arr|
 					(@methods[arr[0, 2]] ||= []) << [builtin, arr[2] || builtin, arr[3], arr[4] || arr[1]]
@@ -588,19 +594,111 @@ module Ruby2CExtension::Plugins
 			end
 		end
 
-		def get_function(method, arity, recv_type)
-			mat = [method, arity, recv_type]
-			if (fn = function_names[mat])
-				fn
-			elsif (meth_list = methods[[method, arity]])
-				if recv_type
-					if meth_list.find { |arr| arr.first == recv_type }
-						function_names[mat] = "#{METHOD_NAME_MAPPINGS[method]}__#{arity}_#{recv_type}"
-					else
-						nil # we can't optimize this recv_type/method combination
+		def do_init_lookup(method, method_info, fallback_fun = nil)
+			tbl_idx = @method_tbl_size
+			@method_tbl_size += 1
+			var = "builtinopt_method_tbl[#{tbl_idx}]"
+			lookup_args = [BUILTIN_C_VAR_MAP[method_info[0]], BUILTIN_C_VAR_MAP[method_info[1]], compiler.sym(method), method_info[3]]
+			@init_code << "#{var} = builtinopt_method_lookup(#{lookup_args.join(", ")});"
+			if fallback_fun
+				@init_code << "if (!(#{var})) #{var} = #{fallback_fun};"
+			end
+			var
+		end
+
+		def get_function(method, arity)
+			ma = [method, arity]
+			if (name = @function_names[ma])
+				name
+			elsif (meth_list = methods[ma])
+				name = @function_names[ma] = "#{METHOD_NAME_MAPPINGS[method]}__#{arity}"
+				code = []
+				code << "static VALUE #{name}(VALUE recv#{arity > 0 ? ", VALUE *argv" : ""}) {"
+				code << "switch(TYPE(recv)) {"
+				meth_list.each { |m|
+					fun_ptr = do_init_lookup(method, m)
+					code << "case #{BUILTIN_TYPE_MAP[m[0]]}:"
+					check = fun_ptr.dup
+					unless NO_CLASS_CHECK_BUILTINS.include?(m[0])
+						check << " && RBASIC(recv)->klass == #{BUILTIN_C_VAR_MAP[m[0]]}"
 					end
+					call =
+						if m[3] == -1
+							"(*(#{fun_ptr}))(#{arity}, #{arity > 0 ? "argv" : "NULL"}, recv)"
+						else
+							args = (0...arity).map { |j| "argv[#{j}]" }.join(", ")
+							args = ", " + args unless args.empty?
+							"(*(#{fun_ptr}))(recv#{args})"
+						end
+					if (first_arg_types = m[2])
+						if arity != 1
+							raise Ruby2CExtension::Ruby2CExtError::Bug, "arity must be 1 for arg type check"
+						end
+						code << "switch(TYPE(argv[0])) {"
+						first_arg_types.each { |o| code << "case #{BUILTIN_TYPE_MAP[o]}:" }
+						code << "if (#{check}) return #{call};"
+						code << "}"
+					else
+						code << "if (#{check}) return #{call};"
+					end
+					code << "break;"
+				}
+				code << "}"
+				code << "return rb_funcall3(recv, #{compiler.sym(method)}, #{arity}, #{arity > 0 ? "argv" : "NULL"});"
+				code << "}"
+				@functions_code << code.join("\n")
+				name
+			else
+				nil
+			end
+		end
+
+		def generate_fallback_function(method, real_arity)
+			ma = [method, real_arity]
+			if (name = @fallback_functions[ma])
+				name
+			else
+				name = @fallback_functions[ma] = "#{METHOD_NAME_MAPPINGS[method]}__#{real_arity >= 0 ? real_arity : "V"}__fallback"
+				code = []
+				if real_arity == -1
+					code << "static VALUE #{name}(int argc, VALUE *argv, VALUE recv) {"
+					code << "return rb_funcall3(recv, #{compiler.sym(method)}, argc, argv);"
+					code << "}"
 				else
-					function_names[mat] = "#{METHOD_NAME_MAPPINGS[method]}__#{arity}"
+					args = (["VALUE recv"] + (0...real_arity).map { |j| "VALUE arg_#{j}" }).join(", ")
+					code << "static VALUE #{name}(#{args}) {"
+					if real_arity > 1
+						code << "VALUE argv[#{real_arity}];"
+						(0...real_arity).each { |j|
+							code << "argv[#{j}] = arg_#{j};"
+						}
+					end
+					argv =
+						case real_arity
+						when 0: "NULL"
+						when 1: "&arg_0"
+						else "argv"
+						end
+					code << "return rb_funcall3(recv, #{compiler.sym(method)}, #{real_arity}, #{argv});"
+					code << "}"
+				end
+				@fallback_functions_code << code.join("\n")
+				name
+			end
+		end
+
+		def get_typed_function_info(method, arity, recv_type)
+			mat = [method, arity, recv_type]
+			if (infos = @typed_function_infos[mat])
+				infos
+			elsif (meth_list = methods[[method, arity]])
+				if (m = meth_list.find { |arr| arr.first == recv_type })
+					@typed_function_infos[mat] = [
+						do_init_lookup(method, m, generate_fallback_function(method, m[3])),
+						m[3], m[2]
+					]
+				else
+					nil # this call is not optimizable
 				end
 			else
 				nil
@@ -616,7 +714,45 @@ module Ruby2CExtension::Plugins
 					return node
 				end
 			end
-			if (fun = get_function(hash[:mid], args.size, deduce_type(hash[:recv])))
+			if (recv_type = deduce_type(hash[:recv]))
+				fun_ptr, real_arity, first_arg_types = *get_typed_function_info(hash[:mid], args.size, recv_type)
+				if fun_ptr
+					cfun.instance_eval {
+						recv = comp(hash[:recv])
+						if args.empty?
+							"(*(#{fun_ptr}))(#{real_arity == -1 ? "0, NULL, " : ""}#{recv})"
+						else
+							arity = args.size
+							c_scope_res {
+								l "VALUE recv = #{recv};"
+								build_c_arr(args, "argv")
+								call_args =
+									if real_arity == -1
+										"#{arity}, #{arity > 0 ? "argv" : "NULL"}, recv"
+									else
+										"recv, " + (0...arity).map { |j| "argv[#{j}]" }.join(", ")
+									end
+								if first_arg_types
+									l "switch(TYPE(argv[0])) {"
+									first_arg_types.each { |o|
+										l "case #{BUILTIN_TYPE_MAP[o]}:"
+									}
+									assign_res("(*(#{fun_ptr}))(#{call_args})")
+									l "break;"
+									l "default:"
+									assign_res("rb_funcall3(recv, #{compiler.sym(hash[:mid])}, 1, argv)")
+									l "}"
+									"res"
+								else
+									"(*(#{fun_ptr}))(#{call_args})"
+								end
+							}
+						end
+					}
+				else
+					node
+				end
+			elsif (fun = get_function(hash[:mid], args.size))
 				cfun.instance_eval {
 					recv = comp(hash[:recv])
 					if args.empty?
@@ -655,64 +791,27 @@ module Ruby2CExtension::Plugins
 		}
 
 		def global_c_code
-			unless function_names.empty?
+			unless @init_code.empty?
 				res = []
 				res << "typedef VALUE (*BUILTINOPT_FP)(ANYARGS);"
+				res << "static BUILTINOPT_FP builtinopt_method_tbl[#{@method_tbl_size}];"
 				res << METHOD_LOOKUP_CODE
-				function_names.sort_by { |mat, name| name }.each { |mat, name|
-					method_sym, arity, recv_type = *mat
-					meth_list = methods[[method_sym, arity]]
-					if recv_type
-						meth_list = [meth_list.find { |arr| arr.first == recv_type }]
-					end
-					res << "static VALUE #{name}(VALUE recv#{arity > 0 ? ", VALUE *argv" : ""}) {"
-					res << "static BUILTINOPT_FP method_tbl[#{meth_list.size}];"
-					res << "static int lookup_done = 0;"
-					res << "if (!lookup_done) {"
-					res << "lookup_done = 1;"
-					meth_list.each_with_index { |m, i|
-						lookup_args = [BUILTIN_C_VAR_MAP[m[0]], BUILTIN_C_VAR_MAP[m[1]], compiler.sym(method_sym), m[3]]
-						res << "method_tbl[#{i}] = builtinopt_method_lookup(#{lookup_args.join(", ")});"
-					}
-					res << "}"
-					res << "switch(TYPE(recv)) {" unless recv_type
-					meth_list.each_with_index { |m, i|
-						res << "case #{BUILTIN_TYPE_MAP[m[0]]}:" unless recv_type
-						check =
-							if recv_type || NO_CLASS_CHECK_BUILTINS.include?(m[0])
-								"method_tbl[#{i}]"
-							else
-								"method_tbl[#{i}] && CLASS_OF(recv) == #{BUILTIN_C_VAR_MAP[m[0]]}"
-							end
-						call =
-							if m[3] == -1
-								"(*(method_tbl[#{i}]))(#{arity}, #{arity > 0 ? "argv" : "NULL"}, recv)"
-							else
-								args = (0...arity).map { |j| "argv[#{j}]" }.join(", ")
-								args = ", " + args unless args.empty?
-								"(*(method_tbl[#{i}]))(recv#{args})"
-							end
-						if (other = m[2])
-							if arity != 1
-								raise Ruby2CExtension::Ruby2CExtError::Bug, "arity must be 1 for arg type check"
-							end
-							res << "switch(TYPE(argv[0])) {"
-							res << other.map { |o| "case #{BUILTIN_TYPE_MAP[o]}:" }.join("\n")
-							res << "if (#{check}) return #{call};"
-							res << "default:"
-							res << (recv_type ? ";" : "goto std_call;")
-							res << "}"
-						else
-							res << "if (#{check}) return #{call};"
-							res << "else goto std_call;" unless recv_type
-						end
-					}
-					res << "default:\nstd_call:" unless recv_type
-					res << "return rb_funcall3(recv, #{compiler.sym(method_sym)}, #{arity}, #{arity > 0 ? "argv" : "0"});"
-					res << "}" unless recv_type
-					res << "}"
-				}
+
+				res.concat(@fallback_functions_code)
+
+				res << "static void init_builtinopt() {"
+				res.concat(@init_code)
+				res << "}"
+
+				res.concat(@functions_code)
+
 				res.join("\n")
+			end
+		end
+
+		def init_c_code
+			unless @init_code.empty?
+				"init_builtinopt();"
 			end
 		end
 

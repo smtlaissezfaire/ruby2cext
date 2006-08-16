@@ -5,14 +5,14 @@ require "ruby2cext/plugins/builtin_methods"
 
 include Ruby2CExtension
 
-NIL_OP = [:nil, {}]
+SELF_OP = [:self, {}]
 
 calls = []
 
 Plugins::BuiltinMethods::METHODS.each { |k, v|
 	v.each { |arr|
-		args = (arr[1] == 0) ? false : [:array, [NIL_OP] * arr[1]]
-		calls << [:call, {:mid=>arr[0], :recv=>NIL_OP, :args=>args}]
+		args = (arr[1] == 0) ? false : [:array, [SELF_OP] * arr[1]]
+		calls << [:call, {:mid=>arr[0], :recv=>SELF_OP, :args=>args}]
 	}
 }
 
