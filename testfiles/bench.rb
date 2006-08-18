@@ -95,5 +95,22 @@ Benchmark.bm(10) { |bmx|
 			[[], []]
 		end
 	}
+	bmx.report("const cache") {
+		50000.times {
+			a = Array
+			a = Object::Array
+			a = ::Array
+		}
+	}
+	bmx.report("method calls") {
+		max = 2000
+		z = x = 0
+		while (x+=1) <= max
+			y = 0
+			while (y+=1) <= max
+				z = (x+y-z) % 32000
+			end
+		end
+	}
 	bmx.report("") {  }
 }
