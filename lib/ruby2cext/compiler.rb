@@ -176,6 +176,8 @@ module Ruby2CExtension
 				c.add_plugin(Plugins::InlineMethods)
 				require "ruby2cext/plugins/builtin_methods"
 				c.add_plugin(Plugins::BuiltinMethods, Plugins::BuiltinMethods::SUPPORTED_BUILTINS)
+				require "ruby2cext/plugins/case_optimize"
+				c.add_plugin(Plugins::CaseOptimize)
 				require "ruby2cext/plugins/require_include"
 				c.add_plugin(Plugins::RequireInclude, file_name, ["."])
 

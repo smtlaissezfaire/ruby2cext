@@ -396,7 +396,7 @@ module Ruby2CExtension
 					assign_res(comp(hash[:body]))
 				}
 				c_else {
-					if hash[:next] && hash[:next].first == :when
+					if Array === hash[:next] && hash[:next].first == :when
 						assign_res(handle_when(hash[:next].last, test_proc))
 					else
 						assign_res(comp(hash[:next]))

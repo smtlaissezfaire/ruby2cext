@@ -69,6 +69,10 @@ end
 
 for a in 0...7
 	case a
+	when true, false
+		p "bool"
+	when nil
+		p "nil"
 	when 0
 		p "null"
 	when 3, *[1,2]
@@ -78,6 +82,29 @@ for a in 0...7
 	else
 		p 6
 	end
+end
+
+case true
+when false
+	p "false"
+when true
+	p "true"
+end
+
+case 2.0
+when 1, nil
+	p 1
+when 2
+	p 2
+when 3
+	p 3
+end
+
+case "a"
+when /a/
+	p "good"
+else
+	p "bad"
 end
 
 a = 1,3
