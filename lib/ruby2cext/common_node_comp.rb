@@ -143,7 +143,9 @@ module Ruby2CExtension
 			when String
 				node
 			else
-				ntype = node.first
+				while (ntype = node.first) == :newline
+					node = node.last[:next]
+				end
 				orig_node = node
 				l "/* #{ntype} */"
 				begin

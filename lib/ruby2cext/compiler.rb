@@ -63,12 +63,14 @@ module Ruby2CExtension
 			CFunction::ToplevelScope.compile(self, node_tree, private_vmode)
 		end
 
+		NODE_TRANSFORM_OPTIONS = {:include_node => true, :keep_newline_nodes => true}
+
 		def rb_file_to_toplevel_functions(source_str, file_name)
 			res = []
 			hash = Parser.parse_string(source_str, file_name)
 			# abb all BEGIN blocks, if available
 			if (beg_tree = hash[:begin])
-				beg_tree = beg_tree.transform(:include_node => true)
+				beg_tree = beg_tree.transform(NODE_TRANSFORM_OPTIONS)
 				if beg_tree.first == :block
 					beg_tree.last.each { |s| res << compile_toplevel_function(s, false) }
 				else
@@ -77,7 +79,7 @@ module Ruby2CExtension
 			end
 			# add toplevel scope
 			if (tree = hash[:tree])
-				res << compile_toplevel_function(tree.transform(:include_node => true))
+				res << compile_toplevel_function(tree.transform(NODE_TRANSFORM_OPTIONS))
 			end
 			res
 		end
