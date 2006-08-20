@@ -6,10 +6,16 @@ module Ruby2CExtension::Plugins
 	class RequireInclude < Ruby2CExtension::Plugin
 
 		attr_reader :include_paths
-		def initialize(compiler, main_file, include_paths)
+
+		def initialize(compiler, include_paths, ignore_files = nil)
 			super(compiler)
 			@include_paths = include_paths
-			done = {File.expand_path(main_file) => true}
+			done = {}
+			if ignore_files
+				ignore_files.each { |file|
+					done[File.expand_path(file)] = true
+				}
+			end
 			compiler.add_preprocessor(:fcall) { |cfun, node|
 				hash = node.last
 				if hash[:mid] == :require &&

@@ -78,7 +78,7 @@ def compile_file(file_name, plugins, include_paths, only_c, logger)
 	logger.info("translating #{file_name} to C")
 	c = Compiler.new(name, logger)
 	unless include_paths.empty?
-		plugins = plugins.merge({:require_include => [file_name, include_paths]})
+		plugins = plugins.merge({:require_include => [include_paths, [file_name]]})
 	end
 	logger.debug("plugins = #{plugins.inspect}")
 	c.add_plugins(plugins)

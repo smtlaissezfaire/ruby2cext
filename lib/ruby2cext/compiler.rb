@@ -174,9 +174,12 @@ module Ruby2CExtension
 					add_plugin(Plugins::BuiltinMethods, builtins)
 				end
 			end
-			if options[:require_include]
+			if (ri_args = options[:require_include])
 				require "ruby2cext/plugins/require_include"
-				add_plugin(Plugins::RequireInclude, *options[:require_include])
+				unless Array === ri_args.first
+					ri_args = [ri_args] # to allow just an array of include paths to also work
+				end
+				add_plugin(Plugins::RequireInclude, *ri_args)
 			end
 		end
 
