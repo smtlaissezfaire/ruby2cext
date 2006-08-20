@@ -9,11 +9,11 @@ module Ruby2CExtension
 
 	class Compiler
 
-		attr_reader :name, :verbose
+		attr_reader :name, :logger, :plugins
 
-		def initialize(name, verbose = false)
+		def initialize(name, logger = nil)
 			@name = name
-			@verbose = verbose
+			@logger = logger
 			@funs = []
 			@funs_reuseable = {}
 			@toplevel_funs = []
@@ -38,7 +38,7 @@ module Ruby2CExtension
 				@sym_man.to_c_code,
 				@global_man.to_c_code,
 			]
-			res.concat(@helpers.values.sort)
+			res.concat(@helpers.keys.sort)
 			res.concat(plugins_global)
 			res.concat(@funs)
 			res << "void Init_#{@name}() {"
@@ -68,7 +68,7 @@ module Ruby2CExtension
 		def rb_file_to_toplevel_functions(source_str, file_name)
 			res = []
 			hash = Parser.parse_string(source_str, file_name)
-			# abb all BEGIN blocks, if available
+			# add all BEGIN blocks, if available
 			if (beg_tree = hash[:begin])
 				beg_tree = beg_tree.transform(NODE_TRANSFORM_OPTIONS)
 				if beg_tree.first == :block
@@ -104,14 +104,18 @@ module Ruby2CExtension
 			@global_man.get(str, false, true)
 		end
 
-		def log(str, force = false)
-			if verbose || force
-				puts str
+		def log(str, warning = false)
+			if logger
+				if warning
+					logger.warn(str)
+				else
+					logger.info(str)
+				end
 			end
 		end
 
 		def add_helper(str)
-			@helpers[str] ||= str
+			@helpers[str] ||= true
 		end
 
 		def add_fun(code, base_name)
@@ -134,6 +138,46 @@ module Ruby2CExtension
 
 		def add_plugin(plugin_class, *args)
 			@plugins << plugin_class.new(self, *args)
+		end
+
+		def add_plugins(options)
+			if options[:warnings]
+				require "ruby2cext/plugins/warnings"
+				add_plugin(Plugins::Warnings)
+			end
+			if (opt = options[:optimizations])
+				if opt == :all
+					opt = {
+						:const_cache=>true, :case_optimize=>true,
+						:builtin_methods=>true, :inline_methods=>true
+					}
+				end
+				if opt[:const_cache]
+					require "ruby2cext/plugins/const_cache"
+					add_plugin(Plugins::ConstCache)
+				end
+				if opt[:case_optimize]
+					require "ruby2cext/plugins/case_optimize"
+					add_plugin(Plugins::CaseOptimize)
+				end
+				if opt[:inline_methods]
+					require "ruby2cext/plugins/inline_methods"
+					add_plugin(Plugins::InlineMethods)
+				end
+				if (builtins = opt[:builtin_methods])
+					require "ruby2cext/plugins/builtin_methods"
+					if Array === builtins
+						builtins = builtins.map { |b| b.to_s.to_sym } # allow symbols, strings and the actual classes to work
+					else
+						builtins = Plugins::BuiltinMethods::SUPPORTED_BUILTINS
+					end
+					add_plugin(Plugins::BuiltinMethods, builtins)
+				end
+			end
+			if options[:require_include]
+				require "ruby2cext/plugins/require_include"
+				add_plugin(Plugins::RequireInclude, *options[:require_include])
+			end
 		end
 
 		# preprocessors can be added by plugins. preprocessors are procs that
@@ -165,128 +209,29 @@ module Ruby2CExtension
 			@preprocessors[node_type]
 		end
 
-		class << self
-			def compile_ruby_to_c(source_str, name, file_name, verbose = false)
-				c = self.new(name, verbose)
-
-				# TODO: require plugins conditionally via options
-				require "ruby2cext/plugins/warnings"
-				c.add_plugin(Plugins::Warnings)
-				require "ruby2cext/plugins/const_cache"
-				c.add_plugin(Plugins::ConstCache)
-				require "ruby2cext/plugins/inline_methods"
-				c.add_plugin(Plugins::InlineMethods)
-				require "ruby2cext/plugins/builtin_methods"
-				c.add_plugin(Plugins::BuiltinMethods, Plugins::BuiltinMethods::SUPPORTED_BUILTINS)
-				require "ruby2cext/plugins/case_optimize"
-				c.add_plugin(Plugins::CaseOptimize)
-				require "ruby2cext/plugins/require_include"
-				c.add_plugin(Plugins::RequireInclude, file_name, ["."])
-
-				c.add_rb_file(source_str, file_name)
-				c.to_c_code
+		# compiles a C file using the compiler from rbconfig
+		def self.compile_c_file_to_dllib(c_file_name, logger = nil)
+			unless c_file_name =~ /\.c\z/
+				raise Ruby2CExtError, "#{c_file_name} is no C file"
 			end
-
-			def compile_c_file_to_dllib(file_basename, name, verbose = false)
-				require "rbconfig"
-
-				conf = ::Config::CONFIG
-				ldshared = conf["LDSHARED"]
-				cflags = [conf["CCDLFLAGS"], conf["CFLAGS"], conf["ARCH_FLAG"]].join(" ")
-				hdrdir = conf["archdir"]
-				dlext = conf["DLEXT"]
-				cmd = "#{ldshared} #{cflags} -I. -I #{hdrdir} -o #{file_basename}.#{dlext} #{file_basename}.c"
-				if RUBY_PLATFORM =~ /mswin32/
-					cmd << " -link /INCREMENTAL:no /EXPORT:Init_#{name}"
-				end
-				puts cmd if verbose
-				unless system(cmd) # run it
-					raise "error while executing '#{cmd}'"
-				end
+			require "rbconfig"
+			conf = ::Config::CONFIG
+			ldshared = conf["LDSHARED"]
+			cflags = [conf["CCDLFLAGS"], conf["CFLAGS"], conf["ARCH_FLAG"]].join(" ")
+			hdrdir = conf["archdir"]
+			dlext = conf["DLEXT"]
+			dl_name = c_file_name.sub(/c\z/, dlext)
+			cmd = "#{ldshared} #{cflags} -I. -I #{hdrdir} -o #{dl_name} #{c_file_name}"
+			if RUBY_PLATFORM =~ /mswin32/
+				cmd << " -link /INCREMENTAL:no /EXPORT:Init_#{File.basename(c_file_name, ".c")}"
 			end
-
-			def compile_file(file_name, only_c = false, verbose = false)
-				bn = File.basename(file_name)
-				unless bn =~ /\A(.*)\.rb\w?\z/
-					raise "#{file_name} is no ruby file"
-				end
-				name = $1;
-				unless name =~ /\A\w+\z/
-					raise "'#{name}' is not a valid extension name"
-				end
-				file_name = File.join(File.dirname(file_name), bn)
-				puts "reading #{file_name}" if verbose
-				source_str = IO.read(file_name)
-				puts "translating #{file_name} to C" if verbose
-				c_code = compile_ruby_to_c(source_str, name, file_name, verbose)
-				file_basename = File.join(File.dirname(file_name), name)
-				puts "writing #{file_basename}.c" if verbose
-				File.open("#{file_basename}.c", "w") { |f| f.puts(c_code) }
-				unless only_c
-					puts "compiling #{file_basename}.c" if verbose
-					compile_c_file_to_dllib(file_basename, name, verbose)
-				end
+			logger.info(cmd) if logger
+			unless system(cmd) # run it
+				raise Ruby2CExtError, "error while executing '#{cmd}'"
 			end
-
-			def usage
-				puts <<EOS
-Usage: #$0 [options] file.rb ...
-
-Translates the given Ruby file into an equivalent C extension. The result is
-stored in file.c. It will then be compiled into a shared object file, unless
-the option --only-c is given.
-
-If multiple files are given, each file will be handled separately.
-
-Options:
-  -c  --only-c   only translate to C
-  -v  --verbose  print status messages
-  -h  --help     print this help
-EOS
-			end
-
-			def run
-				require 'getoptlong'
-
-				opts = GetoptLong.new(
-					[ '--only-c',  '-c', GetoptLong::NO_ARGUMENT ],
-					[ '--verbose', '-v', GetoptLong::NO_ARGUMENT ],
-					[ '--help',    '-h', GetoptLong::NO_ARGUMENT ]
-				)
-
-				only_c = verbose = false
-				begin
-					opts.each do |opt, arg|
-						case opt
-						when "--only-c"
-							only_c = true
-						when "--verbose"
-							verbose = true
-						when "--help"
-							usage
-							exit
-						end
-					end
-					if ARGV.empty?
-						warn "No files given"
-						raise
-					end
-				rescue
-					puts
-					usage
-					exit 1
-				end
-
-				begin
-					ARGV.each { |fn|
-						compile_file(fn, only_c, verbose)
-					}
-				rescue RuntimeError, SyntaxError => e
-					warn e
-					exit 1
-				end
-			end
+			dl_name
 		end
+
 	end
 
 end

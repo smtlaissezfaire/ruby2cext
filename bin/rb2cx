@@ -1,5 +1,169 @@
 #!/usr/bin/env ruby
 
-require "ruby2cext"
+require "ruby2cext/compiler"
+require "getoptlong"
+require "logger"
 
-Ruby2CExtension::Compiler.run
+include Ruby2CExtension
+
+def usage(logger)
+	logger.warn(<<EOS.strip)
+Usage: rb2cx [options] file.rb ...
+
+Translates the given Ruby file into an equivalent C extension. The result is
+stored in file.c. It will then be compiled into a shared object file, unless
+the option --only-c is given.
+
+If multiple files are given, each file will be handled separately.
+
+=== General Options:
+
+-h / --help      print this help
+-c / --only-c    only translate to C
+-v / --verbose   print status messages
+-w / --warnings  print warnings for things that might not work as expected
+
+=== Include Option:
+
+-I / --include path
+
+If a Ruby file require's another Ruby file and that file can be found in the
+given path, then it will be include in the C extension. This option can be used
+multiple times with different pathes, the pathes are then searched in the given
+order. Use --verbose to see which files were included.
+
+=== Optimization Options:
+
+-O / --optimization <optimization>
+
+Where <optimization> is one of the following:
+
+const_cache
+  enables local constant lookup caching
+
+case_optimize
+  optimizes case statments with nil, true, false or Fixnums
+
+builtin_methods
+  optimizes calls to many methods of builtin types
+
+inline_methods
+  inlines the methods __id__, nil?, equal? and __send__
+
+all
+  enables all of the above optimizations
+
+=== Examples:
+
+rb2cx -wv file.rb
+rb2cx -I . -O all file.rb
+rb2cx -I . -I ../libs -O const_cache -O builtin_methods -w file.rb
+EOS
+end
+
+def compile_file(file_name, plugins, include_paths, only_c, logger)
+	bn = File.basename(file_name)
+	unless bn =~ /\A(.*)\.rb\w?\z/
+		raise "#{file_name} is no ruby file"
+	end
+	name = $1;
+	unless name =~ /\A\w+\z/
+		raise "'#{name}' is not a valid extension name"
+	end
+	file_name = File.join(File.dirname(file_name), bn)
+
+	logger.info("reading #{file_name}")
+	source_str = IO.read(file_name)
+
+	logger.info("translating #{file_name} to C")
+	c = Compiler.new(name, logger)
+	unless include_paths.empty?
+		plugins = plugins.merge({:require_include => [file_name, include_paths]})
+	end
+	logger.debug("plugins = #{plugins.inspect}")
+	c.add_plugins(plugins)
+	logger.debug("plugins used: #{c.plugins.map { |pi| pi.class }.inspect}")
+	c.add_rb_file(source_str, file_name)
+	c_code = c.to_c_code
+
+	c_file_name = File.join(File.dirname(file_name), "#{name}.c")
+	logger.info("writing #{c_file_name}")
+	File.open(c_file_name, "w") { |f| f.puts(c_code) }
+
+	unless only_c
+		logger.info("compiling #{c_file_name}")
+		Compiler.compile_c_file_to_dllib(c_file_name, logger)
+	end
+end
+
+def main
+	opts = GetoptLong.new(
+		["--help",         "-h", GetoptLong::NO_ARGUMENT],
+		["--only-c",       "-c", GetoptLong::NO_ARGUMENT],
+		["--verbose",      "-v", GetoptLong::NO_ARGUMENT],
+		["--debug",              GetoptLong::NO_ARGUMENT], # undocumented
+		["--warnings",     "-w", GetoptLong::NO_ARGUMENT],
+		["--include",      "-I", GetoptLong::REQUIRED_ARGUMENT],
+		["--optimization", "-O", GetoptLong::REQUIRED_ARGUMENT]
+	)
+
+	logger = Logger.new(STDERR)
+	logger.formatter = proc { |severity, time, progname, msg| "#{msg}\n" }
+	logger.level = Logger::WARN
+
+	only_c = false
+	include_paths = []
+	optimizations = {}
+	all_optimizations = false
+	plugins = {}
+	begin
+		opts.each do |opt, arg|
+			case opt
+			when "--help"
+				usage(logger)
+				exit
+			when "--only-c"
+				only_c = true
+			when "--verbose"
+				logger.level = Logger::INFO
+			when "--debug"
+				logger.level = Logger::DEBUG
+			when "--warnings"
+				plugins[:warnings] = true
+			when "--include"
+				unless File.directory?(arg)
+					raise "'#{arg}' is no directory"
+				end
+				include_paths << arg
+			when "--optimization"
+				case (arg = arg.to_sym)
+				when :const_cache, :case_optimize, :builtin_methods, :inline_methods
+					optimizations[arg] = true
+				when :all
+					all_optimizations = true
+				else
+					raise "unknown optimization: #{arg}"
+				end
+			end
+		end
+		if ARGV.empty?
+			raise "No files given"
+		end
+	rescue => e
+		logger.error("#{e} ('rb2cx --help' for help)")
+		exit 1
+	end
+
+	plugins[:optimizations] = all_optimizations ? :all : optimizations
+
+	begin
+		ARGV.each { |fn|
+			compile_file(fn, plugins, include_paths, only_c, logger)
+		}
+	rescue RuntimeError, SyntaxError => e
+		logger.error(e)
+		exit 1
+	end
+end
+
+main
