@@ -1,5 +1,6 @@
 
 require "rubynode"
+require "rbconfig"
 require "ruby2cext/parser"
 require "ruby2cext/error"
 require "ruby2cext/tools"
@@ -212,19 +213,18 @@ module Ruby2CExtension
 			@preprocessors[node_type]
 		end
 
+		conf = ::Config::CONFIG
+		cflags = [conf["CCDLFLAGS"], conf["CFLAGS"], conf["ARCH_FLAG"]].join(" ")
+		COMPILE_COMMAND = "#{conf["LDSHARED"]} #{cflags} -I . -I #{conf["archdir"]}"
+		DLEXT = conf["DLEXT"]
+
 		# compiles a C file using the compiler from rbconfig
 		def self.compile_c_file_to_dllib(c_file_name, logger = nil)
 			unless c_file_name =~ /\.c\z/
 				raise Ruby2CExtError, "#{c_file_name} is no C file"
 			end
-			require "rbconfig"
-			conf = ::Config::CONFIG
-			ldshared = conf["LDSHARED"]
-			cflags = [conf["CCDLFLAGS"], conf["CFLAGS"], conf["ARCH_FLAG"]].join(" ")
-			hdrdir = conf["archdir"]
-			dlext = conf["DLEXT"]
-			dl_name = c_file_name.sub(/c\z/, dlext)
-			cmd = "#{ldshared} #{cflags} -I. -I #{hdrdir} -o #{dl_name} #{c_file_name}"
+			dl_name = c_file_name.sub(/c\z/, DLEXT)
+			cmd = "#{COMPILE_COMMAND} -o #{dl_name} #{c_file_name}"
 			if RUBY_PLATFORM =~ /mswin32/
 				cmd << " -link /INCREMENTAL:no /EXPORT:Init_#{File.basename(c_file_name, ".c")}"
 			end
