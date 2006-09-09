@@ -21,7 +21,10 @@ module Ruby2CExtension
 				# turn warnings of here to avoid the repetition of parse warnings
 				$VERBOSE = nil
 				if (tmp = src.parse_to_nodes(file_name, 0))
-					res[:tree] = tmp.nd_next.nd_body
+					tmp = tmp.nd_next.nd_body
+					if tmp.type == :scope && tmp.nd_next
+						res[:tree] = tmp
+					end
 				end
 			ensure
 				$VERBOSE = old_verb
