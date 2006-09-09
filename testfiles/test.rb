@@ -40,6 +40,16 @@ p [1111111111111222222333345342323, /ab/i, /cd/m, /xx/n]
 
 __send__(:p, true.__id__, false.__send__(:inspect), "abc".__send__(:[], 1), 2.equal?(3), nil.nil?, 1.nil?)
 
+def m1(a,b=[],*c)
+	p a,b,c
+end
+m1(1,2,3,4,5)
+m1 3
+def m2(*)
+	p "STAR"
+end
+m2 1,2,3
+
 a="hello"
 def a.a
 	p self
