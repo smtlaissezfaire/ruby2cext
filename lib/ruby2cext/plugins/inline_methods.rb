@@ -6,12 +6,6 @@ module Ruby2CExtension::Plugins
 	class InlineMethods < Ruby2CExtension::Plugin
 
 		METHODS = {
-			[:__id__, 0] => proc { |cfun, recv, args|
-				cfun.instance_eval {
-					assign_res(recv)
-					"(SPECIAL_CONST_P(res) ? LONG2NUM((long)res) : (VALUE)((long)recv|FIXNUM_FLAG))"
-				}
-			},
 			[:nil?, 0] => proc { |cfun, recv, args|
 				"(Qnil == (#{recv}) ? Qtrue : Qfalse)"
 			},

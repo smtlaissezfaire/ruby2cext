@@ -3,6 +3,7 @@ require "ruby2cext/str_to_c_strlit"
 require "ruby2cext/error"
 require "ruby2cext/tools"
 require "ruby2cext/scopes"
+require "ruby2cext/version"
 
 module Ruby2CExtension
 
@@ -13,6 +14,8 @@ module Ruby2CExtension
 		# scope (with get_lvar, get_lvar_idx, get_dvar, get_dvar_curr, vmode, vmode_def_fun)
 		# un, sym, global, add_helper
 		# ...
+
+		is_ruby_185 = (RUBY_VERSION == "1.8.5") # see below
 
 		include Tools::EnsureNodeTypeMixin
 
@@ -83,9 +86,18 @@ module Ruby2CExtension
 			arg = arg.last
 			cnt = arg[:cnt]
 			opt = make_block(arg[:opt]).last
-			rest = arg[:rest] - 2
+			rest = arg[:rest] || -1
+			if Array == rest # 1.8.5 change
+				ensure_node_type(rest, :lasgn)
+				if rest.last[:vid] == 0 # e.g. def foo(*); end
+					rest = -2
+				else
+					rest = rest.last[:cnt]
+				end
+			end
+			rest = rest - 2
 			need_wrong_arg_num_helper = false
-			if opt.empty? && rest < 0
+			if opt.empty? && rest == -3 # then it was rest == -1, which means no rest_arg
 				l "if (argc != #{cnt}) wrong_arg_num(argc, #{cnt});"
 				need_wrong_arg_num_helper = true
 			else
@@ -93,7 +105,7 @@ module Ruby2CExtension
 					l "if (argc < #{cnt}) wrong_arg_num(argc, #{cnt});"
 					need_wrong_arg_num_helper = true
 				end
-				if rest < 0
+				if rest == -3 # then it was rest == -1, which means no rest_arg
 					l "if (argc > #{cnt + opt.size}) wrong_arg_num(argc, #{cnt + opt.size});"
 					need_wrong_arg_num_helper = true
 				end
@@ -122,7 +134,7 @@ module Ruby2CExtension
 					l "#{scope.get_lvar_idx(rest)} = rb_ary_new4(argc-#{sum}, argv+#{sum});"
 				}
 				c_else {
-					l "#{scope.get_lvar_idx(rest)} = rb_ary_new();"
+					l "#{scope.get_lvar_idx(rest)} = rb_ary_new2(0);"
 				}
 			end
 
@@ -1151,12 +1163,24 @@ module Ruby2CExtension
 		end
 
 		def comp_undef(hash)
-			l "rb_undef(#{get_class}, #{sym(hash[:mid])});"
+			if Array === (mid = hash[:mid]) # 1.8.5
+				l "rb_undef(#{get_class}, rb_to_id(#{comp(mid)}));"
+			else
+				l "rb_undef(#{get_class}, #{sym(mid)});"
+			end
 			"Qnil"
 		end
 
 		def comp_alias(hash)
-			l "rb_alias(#{get_class}, #{sym(hash[:new])}, #{sym(hash[:old])});"
+			if Array === hash[:new] # 1.8.5
+				c_scope {
+					l "ID new_id;"
+					l "new_id = rb_to_id(#{comp(hash[:new])});"
+					l "rb_alias(#{get_class}, new_id, rb_to_id(#{comp(hash[:old])}));"
+				}
+			else
+				l "rb_alias(#{get_class}, #{sym(hash[:new])}, #{sym(hash[:old])});"
+			end
 			"Qnil"
 		end
 		def comp_valias(hash)
