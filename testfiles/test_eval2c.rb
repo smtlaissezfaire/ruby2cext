@@ -21,3 +21,5 @@ end
 p A.new(5).foo(6)
 
 p $e2c.instance_eval("4321", "reverse")
+
+p $e2c.compile_to_proc("|a,b| a+b").call(2, 3)
