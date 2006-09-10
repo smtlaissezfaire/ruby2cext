@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 
 require "ruby2cext/compiler"
+require "ruby2cext/version"
 require "getoptlong"
 require "logger"
 
@@ -22,6 +23,7 @@ If multiple files are given, each file will be handled separately.
 -c / --only-c    only translate to C
 -v / --verbose   print status messages
 -w / --warnings  print warnings for things that might not work as expected
+-V / --version   print the Ruby2CExtension version
 
 === Include Option:
 
@@ -48,7 +50,7 @@ builtin_methods
   optimizes calls to many methods of builtin types
 
 inline_methods
-  inlines the methods __id__, nil?, equal? and __send__
+  inlines the methods nil?, equal? and __send__
 
 all
   enables all of the above optimizations
@@ -101,6 +103,7 @@ def main
 		["--help",         "-h", GetoptLong::NO_ARGUMENT],
 		["--only-c",       "-c", GetoptLong::NO_ARGUMENT],
 		["--verbose",      "-v", GetoptLong::NO_ARGUMENT],
+		["--version",      "-V", GetoptLong::NO_ARGUMENT],
 		["--debug",              GetoptLong::NO_ARGUMENT], # undocumented
 		["--warnings",     "-w", GetoptLong::NO_ARGUMENT],
 		["--include",      "-I", GetoptLong::REQUIRED_ARGUMENT],
@@ -116,6 +119,7 @@ def main
 	optimizations = {}
 	all_optimizations = false
 	plugins = {}
+	version_printed = false
 	begin
 		opts.each do |opt, arg|
 			case opt
@@ -126,6 +130,11 @@ def main
 				only_c = true
 			when "--verbose"
 				logger.level = Logger::INFO
+			when "--version"
+				unless version_printed
+					logger.warn(Ruby2CExtension::FULL_VERSION_STRING)
+					version_printed = true
+				end
 			when "--debug"
 				logger.level = Logger::DEBUG
 			when "--warnings"
@@ -146,7 +155,7 @@ def main
 				end
 			end
 		end
-		if ARGV.empty?
+		if ARGV.empty? && !version_printed
 			raise "No files given"
 		end
 	rescue => e
