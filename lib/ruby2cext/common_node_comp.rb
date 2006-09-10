@@ -15,7 +15,7 @@ module Ruby2CExtension
 		# un, sym, global, add_helper
 		# ...
 
-		is_ruby_185 = (RUBY_VERSION == "1.8.5") # see below
+		is_ruby_185 = (RUBY_VERSION >= "1.8.5") # see below
 
 		include Tools::EnsureNodeTypeMixin
 
@@ -87,7 +87,7 @@ module Ruby2CExtension
 			cnt = arg[:cnt]
 			opt = make_block(arg[:opt]).last
 			rest = arg[:rest] || -1
-			if Array == rest # 1.8.5 change
+			if Array === rest # 1.8.5 change
 				ensure_node_type(rest, :lasgn)
 				if rest.last[:vid] == 0 # e.g. def foo(*); end
 					rest = -2
@@ -98,15 +98,15 @@ module Ruby2CExtension
 			rest = rest - 2
 			need_wrong_arg_num_helper = false
 			if opt.empty? && rest == -3 # then it was rest == -1, which means no rest_arg
-				l "if (argc != #{cnt}) wrong_arg_num(argc, #{cnt});"
+				l "if (meth_argc != #{cnt}) wrong_arg_num(meth_argc, #{cnt});"
 				need_wrong_arg_num_helper = true
 			else
 				if cnt > 0
-					l "if (argc < #{cnt}) wrong_arg_num(argc, #{cnt});"
+					l "if (meth_argc < #{cnt}) wrong_arg_num(meth_argc, #{cnt});"
 					need_wrong_arg_num_helper = true
 				end
 				if rest == -3 # then it was rest == -1, which means no rest_arg
-					l "if (argc > #{cnt + opt.size}) wrong_arg_num(argc, #{cnt + opt.size});"
+					l "if (meth_argc > #{cnt + opt.size}) wrong_arg_num(meth_argc, #{cnt + opt.size});"
 					need_wrong_arg_num_helper = true
 				end
 			end
@@ -118,11 +118,11 @@ module Ruby2CExtension
 				EOC
 			end
 			(0...cnt).each { |i|
-				l "#{scope.get_lvar_idx(i)} = argv[#{i}];"
+				l "#{scope.get_lvar_idx(i)} = meth_argv[#{i}];"
 			}
 			opt.each_with_index { |asgn, i|
-				c_if("argc > #{cnt + i}") {
-					l "#{scope.get_lvar_idx(cnt + i)} = argv[#{cnt + i}];"
+				c_if("meth_argc > #{cnt + i}") {
+					l "#{scope.get_lvar_idx(cnt + i)} = meth_argv[#{cnt + i}];"
 				}
 				c_else {
 					l "#{comp(asgn)};"
@@ -130,8 +130,8 @@ module Ruby2CExtension
 			}
 			if rest >= 0
 				sum = cnt + opt.size
-				c_if("argc > #{sum}") {
-					l "#{scope.get_lvar_idx(rest)} = rb_ary_new4(argc-#{sum}, argv+#{sum});"
+				c_if("meth_argc > #{sum}") {
+					l "#{scope.get_lvar_idx(rest)} = rb_ary_new4(meth_argc-#{sum}, meth_argv+#{sum});"
 				}
 				c_else {
 					l "#{scope.get_lvar_idx(rest)} = rb_ary_new2(0);"
@@ -170,7 +170,7 @@ module Ruby2CExtension
 						}
 					end
 					if Array === node && node.first == ntype
-						send("comp_#{ntype}", node.last)
+						__send__("comp_#{ntype}", node.last)
 					else
 						# retry with the result of preprocessing
 						comp(node)
@@ -200,22 +200,22 @@ module Ruby2CExtension
 			"rb_funcall2(#{get_self}, #{sym(hash[:mid])}, 0, 0)"
 		end
 
-		def build_c_arr(arr, var_name)
-			l "VALUE #{var_name}[#{arr.size}];"
+		def build_c_arr(arr, var_name, extra = 0)
+			l "VALUE #{var_name}[#{arr.size + extra}];"
 			arr.each_with_index { |n, i|
 				l "#{var_name}[#{i}] = #{comp(n)};"
 			}
 		end
-		def build_args(args)
+		def build_args(args, extra = 0)
 			if args.first == :array
 				l "const int argc = #{args.last.size};"
-				build_c_arr(args.last, "argv")
+				build_c_arr(args.last, "argv", extra)
 			else
 				l "int argc; VALUE *argv;"
 				assign_res(comp(args))
 				l "if (TYPE(res) != T_ARRAY) res = rb_ary_to_ary(res);"
 				l "argc = RARRAY(res)->len;"
-				l "argv = ALLOCA_N(VALUE, argc);"
+				l "argv = ALLOCA_N(VALUE, argc + #{extra});"
 				l "MEMCPY(argv, RARRAY(res)->ptr, VALUE, argc);"
 			end
 		end
@@ -267,11 +267,26 @@ module Ruby2CExtension
 			EOC
 		end
 
-		def comp_zsuper(hash, &iter_proc)
-			iter_proc ||= NON_ITER_PROC
-			helper_super_allowed_check
-			l "super_allowed_check();"
-			iter_proc["rb_call_super(ruby_frame->argc, ruby_frame->argv)", [], []]
+		if is_ruby_185
+			def comp_zsuper(hash, &iter_proc)
+				if CFunction::Method === self
+					# super zsuper only in a method in 1.8.5
+					iter_proc ||= NON_ITER_PROC
+					helper_super_allowed_check
+					l "super_allowed_check();"
+					# this is not 100% compatible with 1.8.5 ...
+					iter_proc["rb_call_super(%s, %s)", %w[meth_argc meth_argv], %w[int VALUE*]]
+				else
+					raise Ruby2CExtError::NotSupported, "super without explicit arguments is not supported here"
+				end
+			end
+		else
+			def comp_zsuper(hash, &iter_proc)
+				iter_proc ||= NON_ITER_PROC
+				helper_super_allowed_check
+				l "super_allowed_check();"
+				iter_proc["rb_call_super(ruby_frame->argc, ruby_frame->argv)", [], []]
+			end
 		end
 
 		def comp_super(hash, &iter_proc)
@@ -462,7 +477,7 @@ module Ruby2CExtension
 			ensure_node_type(iter, [:call, :fcall, :super, :zsuper, :postexe]) # attrasgn ???
 			l "do {"
 			block_calls = 0
-			assign_res(send("comp_#{iter.first}", iter.last) { |str, args, arg_types|
+			assign_res(__send__("comp_#{iter.first}", iter.last) { |str, args, arg_types|
 				block_calls += 1
 				c_scope_res {
 					l "VALUE iter_data[#{args.size + 1}];"
@@ -502,7 +517,7 @@ module Ruby2CExtension
 				l "proc = #{comp(hash[:body])};"
 				iter = hash[:iter]
 				c_if("NIL_P(proc)") {
-					assign_res(send("comp_#{iter.first}", iter.last))
+					assign_res(__send__("comp_#{iter.first}", iter.last))
 				}
 				c_else {
 					# rb_obj_is_proc is static in eval.c, so we just convert and hope the best...
@@ -758,50 +773,104 @@ module Ruby2CExtension
 			handle_flip(hash, true)
 		end
 
-		def comp_op_asgn1(hash)
-			ensure_node_type(hash[:args], :array)
-			c_scope_res {
-				l "VALUE recv, val;"
-				l "recv = #{comp(hash[:recv])};"
+		if is_ruby_185
+			# Ruby 1.8.5
+			def comp_op_asgn1(hash)
+				ensure_node_type(hash[:args], :argscat)
 				c_scope_res {
-					build_args([:array, hash[:args].last[1..-1]])
-					l "val = rb_funcall2(recv, #{sym(:[])}, argc-1, argv);"
-					mid = hash[:mid]
+					l "VALUE oa1_recv, oa1_val;"
+					l "oa1_recv = #{comp(hash[:recv])};"
+					c_scope_res {
+						build_args(hash[:args].last[:body], 1)
+						l "oa1_val = rb_funcall3(oa1_recv, #{sym(:[])}, argc, argv);"
+						mid = hash[:mid]
+						rval = hash[:args].last[:head]
+						if Symbol === mid
+							call = [:call, {:recv=>"oa1_val", :mid=>mid, :args=>[:array, [rval]]}]
+							l "oa1_val = #{comp(call)};"
+							l "{"
+						else
+							# mid == 0 is OR, mid == 1 is AND
+							l "if (#{mid == 0 ? "!" : ""}RTEST(oa1_val)) {"
+							l "oa1_val = #{comp(rval)};"
+						end
+						l "argv[argc] = oa1_val;"
+						l "rb_funcall2(oa1_recv, #{sym(:[]=)}, argc + 1, argv);"
+						l "}"
+						"oa1_val"
+					}
+				}
+			end
+			def comp_op_asgn2(hash)
+				ensure_node_type(ids = hash[:next], :op_asgn2)
+				ids = ids.last
+				c_scope_res {
+					l "VALUE oa2_recv, oa2_val;"
+					l "oa2_recv = #{comp(hash[:recv])};"
+					call = [:call, {:recv=>"oa2_recv", :mid=>ids[:vid], :args=>false}]
+					l "oa2_val = #{comp(call)};"
+					mid = ids[:mid]
 					if Symbol === mid
-						l "val = rb_funcall(val, #{sym(mid)}, 1, #{comp(hash[:args].last.first)});"
+						call = [:call, {:recv=>"oa2_val", :mid=>mid, :args=>[:array, [hash[:value]]]}]
+						l "oa2_val = #{comp(call)};"
+						l "{"
+					else
+						# mid == 0 is OR, mid == 1 is AND
+						l "if (#{mid == 0 ? "!" : ""}RTEST(oa2_val)) {"
+						l "oa2_val = #{comp(hash[:value])};"
+					end
+					l "rb_funcall2(oa2_recv, #{sym(ids[:aid])}, 1, &oa2_val);"
+					l "}"
+					"oa2_val"
+				}
+			end
+		else
+			# Ruby 1.8.4
+			def comp_op_asgn1(hash)
+				ensure_node_type(hash[:args], :array)
+				c_scope_res {
+					l "VALUE recv, val;"
+					l "recv = #{comp(hash[:recv])};"
+					c_scope_res {
+						build_args([:array, hash[:args].last[1..-1]])
+						l "val = rb_funcall2(recv, #{sym(:[])}, argc-1, argv);"
+						mid = hash[:mid]
+						if Symbol === mid
+							l "val = rb_funcall(val, #{sym(mid)}, 1, #{comp(hash[:args].last.first)});"
+							l "{"
+						else
+							# mid == 0 is OR, mid == 1 is AND
+							l "if (#{mid == 0 ? "!" : ""}RTEST(val)) {"
+							l "val = #{comp(hash[:args].last.first)};"
+						end
+						l "argv[argc-1] = val;"
+						l "rb_funcall2(recv, #{sym(:[]=)}, argc, argv);"
+						l "}"
+						"val"
+					}
+				}
+			end
+			def comp_op_asgn2(hash)
+				ensure_node_type(ids = hash[:next], :op_asgn2)
+				ids = ids.last
+				c_scope_res {
+					l "VALUE recv, val;"
+					l "recv = #{comp(hash[:recv])};"
+					l "val = rb_funcall(recv, #{sym(ids[:vid])}, 0);"
+					mid = ids[:mid]
+					if Symbol === mid
+						l "val = rb_funcall(val, #{sym(mid)}, 1, #{comp(hash[:value])});"
 						l "{"
 					else
 						# mid == 0 is OR, mid == 1 is AND
 						l "if (#{mid == 0 ? "!" : ""}RTEST(val)) {"
-						l "val = #{comp(hash[:args].last.first)};"
+						l "val = #{comp(hash[:value])};"
 					end
-					l "argv[argc-1] = val;"
-					l "rb_funcall2(recv, #{sym(:[]=)}, argc, argv);"
+					l "rb_funcall2(recv, #{sym(ids[:aid])}, 1, &val);"
 					l "}"
 					"val"
 				}
-			}
-		end
-		def comp_op_asgn2(hash)
-			ensure_node_type(ids = hash[:next], :op_asgn2)
-			ids = ids.last
-			c_scope_res {
-				l "VALUE recv, val;"
-				l "recv = #{comp(hash[:recv])};"
-				l "val = rb_funcall(recv, #{sym(ids[:vid])}, 0);"
-				mid = ids[:mid]
-				if Symbol === mid
-					l "val = rb_funcall(val, #{sym(mid)}, 1, #{comp(hash[:value])});"
-					l "{"
-				else
-					# mid == 0 is OR, mid == 1 is AND
-					l "if (#{mid == 0 ? "!" : ""}RTEST(val)) {"
-					l "val = #{comp(hash[:value])};"
-				end
-				l "rb_funcall2(recv, #{sym(ids[:aid])}, 1, &val);"
-				l "}"
-				"val"
-			}
+			end
 		end
 
 		def comp_op_asgn_and(hash)

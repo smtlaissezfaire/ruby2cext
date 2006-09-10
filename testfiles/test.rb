@@ -129,6 +129,26 @@ a[2]&&=5
 
 p a
 
+a = Object.new
+def a.method_missing(*args) p args; end
+
+a[1,*[2,3]]
+a[1,*[2,3]]=4
+a[1,*[2,3]]||=4
+
+class AliasTest
+	def foo
+		p "afoo"
+	end
+
+	alias afoo foo
+	undef foo
+end
+
+$at = AliasTest.new
+alias $aat $at
+$aat.afoo
+
 a = Struct.new(:aa).new
 
 a.aa=3
@@ -247,19 +267,24 @@ end_t
 end_t
 
 class SupA
-	def test
+	def test(*arg)
+		p "SupA#test", arg
 		yield 23
 	end
 end
 class SupB < SupA
-	def test
+	def test(*a)
+		p a
 		super
 		super()
+		super(a)
 		super { |b| p b+1 }
 		super() { |b| p b+2 }
+		super(a) { |b| p b+3 }
 	end
 end
 SupB.new.test { |a| p a }
+SupB.new.test(23) { |a| p a }
 
 for i in 1..9
 	p i

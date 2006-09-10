@@ -1,6 +1,6 @@
 
 $:.unshift("../lib")
-require "ruby2cext"
+require "ruby2cext/compiler"
 require "ruby2cext/plugins/builtin_methods"
 
 include Ruby2CExtension
@@ -34,4 +34,4 @@ c << "}"
 File.open("bm_test.c", "w") { |f|
 	f.puts c.join("\n")
 }
-Compiler.compile_c_file_to_dllib("bm_test", "bm_test", true)
+Compiler.compile_c_file_to_dllib("bm_test.c")
