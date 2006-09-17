@@ -274,7 +274,7 @@ module Ruby2CExtension
 					iter_proc ||= NON_ITER_PROC
 					helper_super_allowed_check
 					l "super_allowed_check();"
-					# this is not 100% compatible with 1.8.5 ...
+					# this is not 100% equivalent to 1.8.5 behavior ...
 					iter_proc["rb_call_super(%s, %s)", %w[meth_argc meth_argv], %w[int VALUE*]]
 				else
 					raise Ruby2CExtError::NotSupported, "super without explicit arguments is not supported here"
