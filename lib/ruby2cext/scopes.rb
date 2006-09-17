@@ -5,15 +5,16 @@ module Ruby2CExtension
 
 	module Scopes
 		class Scope
-			VMODES = [:public, :private, :protected, :module_function]
+			VMODES = [:public, :private, :protected, :module_function].freeze
 
-			def initialize(tbl, private_vmode = false)
+			def initialize(tbl, vmode_methods = VMODES, private_vmode = false)
+				@vmode_methods = vmode_methods
 				@vmode = private_vmode ? :private : :public
 				@tbl = tbl || []
 				@closure_tbl = nil # must be set by user
 			end
-			attr_reader :tbl
-			attr_accessor :vmode, :need_heap, :closure_tbl
+			attr_reader :tbl, :vmode, :vmode_methods
+			attr_accessor :need_heap, :closure_tbl
 
 			def get_lvar_idx(i)
 				raise Ruby2CExtError, "wrong lvar index: #{i}" unless i >= 0 && i < tbl.size
@@ -33,6 +34,12 @@ module Ruby2CExtension
 			alias get_dvar_curr get_dvar
 			alias get_dvar_ary get_dvar
 
+			def vmode_method?(method_id)
+				if (res = vmode_methods.include?(method_id))
+					@vmode = method_id
+				end
+				res
+			end
 			def vmode_def_fun
 				case vmode
 				when :protected, :private
@@ -80,11 +87,6 @@ module Ruby2CExtension
 			end
 			attr_reader :tbl, :base_scope, :outer_scope, :depth
 			attr_accessor :need_heap, :need_closure, :closure_tbl
-
-			def method_missing(meth, *arg)
-				super unless meth.to_s =~ /vmode/
-				base_scope.send(meth, *arg)
-			end
 
 			def outer_closure_tbl
 				(outer_scope || base_scope).closure_tbl
@@ -143,6 +145,17 @@ module Ruby2CExtension
 				else
 					get_closure_ary(idx)
 				end
+			end
+
+			# blocks always has public vmode
+			def vmode
+				:public
+			end
+			def vmode_method?(method_id)
+				false
+			end
+			def vmode_def_fun
+				"rb_define_method"
 			end
 
 			def new_dyna_scope

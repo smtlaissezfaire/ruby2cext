@@ -11,6 +11,7 @@ module Ruby2CExtension::Plugins
 
 		exp = "might not behave as expected"
 		exp2 = "will not behave as expected"
+		vis_exp = "visibility of the defined %s might not be as expected"
 
 		VCALL_WARNINGS = {
 			:binding => exp2,
@@ -21,7 +22,11 @@ module Ruby2CExtension::Plugins
 		FCALL_WARNINGS = {
 			:set_trace_func => exp,
 			:eval => exp,
-			:define_method => "visibility of the defined method might not be as expected",
+			:define_method => vis_exp % "method",
+			:attr => vis_exp % "attribute",
+			:attr_reader => vis_exp % "attribute(s)",
+			:attr_writer => vis_exp % "attribute(s)",
+			:attr_accessor => vis_exp % "attribute(s)",
 			:instance_eval => exp,
 			:module_eval => exp,
 			:class_eval => exp,

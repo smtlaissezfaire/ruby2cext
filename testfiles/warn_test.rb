@@ -2,6 +2,10 @@ eval("1")
 method(:eval).arity
 class A
 	define_method(:evxx, method(:eval))
+	attr :a1
+	attr_reader :a2, :a3
+	attr_writer :a4, :a5
+	attr_accessor :a7
 end
 def foo
 	local_variables +

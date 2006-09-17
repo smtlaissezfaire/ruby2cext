@@ -233,9 +233,11 @@ module Ruby2CExtension
 		end
 
 		class ClassModuleScope < Base
-			def self.compile(outer, scope_node, class_mod_var)
+			def self.compile(outer, scope_node, class_mod_var, is_class)
 				ensure_node_type(scope_node, :scope)
-				cf = self.new(outer.compiler, Scopes::Scope.new(scope_node.last[:tbl]))
+				vmode_methods = Scopes::Scope::VMODES.dup
+				vmode_methods.delete :module_function if is_class
+				cf = self.new(outer.compiler, Scopes::Scope.new(scope_node.last[:tbl], vmode_methods))
 				cf.instance_eval {
 					block = make_block(scope_node.last[:next])
 					l "return #{comp(block)};"
@@ -264,7 +266,7 @@ module Ruby2CExtension
 		class ToplevelScope < ClassModuleScope
 			def self.compile(compiler, scope_node, private_vmode = true)
 				ensure_node_type(scope_node, :scope)
-				cf = self.new(compiler, Scopes::Scope.new(scope_node.last[:tbl], private_vmode))
+				cf = self.new(compiler, Scopes::Scope.new(scope_node.last[:tbl], [:public, :private], private_vmode))
 				cf.instance_eval {
 					block = make_block(scope_node.last[:next])
 					l "#{comp(block)};"
@@ -278,7 +280,7 @@ module Ruby2CExtension
 		class Method < Base
 			def self.compile(outer, scope_node, def_fun, class_var, mid)
 				ensure_node_type(scope_node, :scope)
-				cf = self.new(outer.compiler, Scopes::Scope.new(scope_node.last[:tbl]))
+				cf = self.new(outer.compiler, Scopes::Scope.new(scope_node.last[:tbl], []))
 				cf.instance_eval {
 					block_array = make_block(scope_node.last[:next]).last.dup # dup the block_array to allow modification
 					arg = block_array.shift

@@ -11,7 +11,7 @@ module Ruby2CExtension
 
 		# the comp methods need lots of methods from CFunction::Base or subclasses to work, e.g.:
 		# l, assign_res, get_self, get_class, get_cbase, get_cvar_cbase,
-		# scope (with get_lvar, get_lvar_idx, get_dvar, get_dvar_curr, vmode, vmode_def_fun)
+		# scope (with get_lvar, get_lvar_idx, get_dvar, get_dvar_curr, vmode_method?, vmode_def_fun, ...)
 		# un, sym, global, add_helper
 		# ...
 
@@ -72,11 +72,6 @@ module Ruby2CExtension
 				block.first == :block ? block : [:block, [block]]
 			else
 				[:block, []]
-			end
-		end
-		def set_vmode(mid)
-			if Scopes::Scope::VMODES.include? mid
-				scope.vmode = mid
 			end
 		end
 
@@ -196,8 +191,11 @@ module Ruby2CExtension
 		end
 
 		def comp_vcall(hash)
-			set_vmode(hash[:mid])
-			"rb_funcall2(#{get_self}, #{sym(hash[:mid])}, 0, 0)"
+			if scope.vmode_method?(hash[:mid])
+				"Qnil"
+			else
+				"rb_funcall2(#{get_self}, #{sym(hash[:mid])}, 0, 0)"
+			end
 		end
 
 		def build_c_arr(arr, var_name, extra = 0)
@@ -232,7 +230,11 @@ module Ruby2CExtension
 					iter_proc["#{fun}(%s, #{sym(mid)}, %s, %s)", %w[recv argc argv], %w[VALUE int VALUE*]]
 				}
 			else
-				set_vmode(mid) if allow_private
+				if allow_private && iter_proc == NON_ITER_PROC
+					if scope.vmode_method?(mid)
+						return "Qnil"
+					end
+				end
 				iter_proc["#{fun}(%s, #{sym(mid)}, 0, 0)", [recv], %w[VALUE]]
 			end
 		end
@@ -1287,7 +1289,7 @@ module Ruby2CExtension
 				l "prefix = #{make_class_prefix(hash[:cpath])};"
 				l "super = #{comp(sup)};" if sup
 				l "tmp_class = class_prep(prefix, #{sup ? "super" : "0"}, #{sym(hash[:cpath].last[:mid])});"
-				CFunction::ClassModuleScope.compile(self, hash[:body], "tmp_class")
+				CFunction::ClassModuleScope.compile(self, hash[:body], "tmp_class", true)
 			}
 		end
 
@@ -1312,7 +1314,7 @@ module Ruby2CExtension
 				l "VALUE prefix, tmp_module;"
 				l "prefix = #{make_class_prefix(hash[:cpath])};"
 				l "tmp_module = module_prep(prefix, #{sym(hash[:cpath].last[:mid])});"
-				CFunction::ClassModuleScope.compile(self, hash[:body], "tmp_module")
+				CFunction::ClassModuleScope.compile(self, hash[:body], "tmp_module", false)
 			}
 		end
 
@@ -1328,7 +1330,7 @@ module Ruby2CExtension
 				l "tmp_sclass = #{comp(hash[:recv])};"
 				l "sclass_check(tmp_sclass);"
 				l "tmp_sclass = rb_singleton_class(tmp_sclass);"
-				CFunction::ClassModuleScope.compile(self, hash[:body], "tmp_sclass")
+				CFunction::ClassModuleScope.compile(self, hash[:body], "tmp_sclass", true)
 			}
 		end
 

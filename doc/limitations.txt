@@ -120,30 +120,127 @@ might make some code behave unexpectedly.
 h2. Vmode
 
 The so called vmode is also associated with the Ruby SCOPE (though not
-directly stored inside the SCOPE struct). The vmode is set by methods like
-@private@, @protected@ and @public@ and determines which visibility newly
-defined methods get.
+directly stored inside the SCOPE struct). The vmode is set by the methods
+@private@, @protected@, @public@ and @module_function@ and determines which
+visibility newly defined methods get.
 
-Ruby2CExtension does not access the current vmode, instead it tries to figure
-out at compile time what visibility a method defined using @def@ will get.
-But be careful with @Module#define_method@: it will use Ruby's internal vmode.
+Ruby2CExtension can not (easily) access Ruby's internal vmode, instead it
+tries to figure out at compile time what visibility a method defined using
+@def@ will get.  But be careful with @Module#define_method@ and
+@Module#attr*@: those methods will use Ruby's internal vmode.
+
+So, there are actually two different vmodes at work for compiled Ruby
+code: the vmode that Ruby2CExtension uses at compile time to guess which
+visibility methods defined with @def@ get and Ruby's internal vmode at
+runtime which is used by @Module#define_method@ and @Module#attr*@.
+
+Ruby2CExtension's compile time vmode heuristic works by replacing calls to the
+vmode changing methods with @nil@ and instead changing the compile time vmode.
+The calls are only replaced if they are without receiver and without
+arguments. And it also depends on where the calls are made:
+
+In the *toplevel scope* only calls to @private@ and @public@ are replaced, the
+default vmode in the toplevel scope is private.
+
+In a *module scope* calls to @private@, @protected@, @public@ and
+@module_function@ are replaced, the default vmode in a module scope is public.
+
+In a *class scope* calls to @private@, @protected@ and @public@ are replaced,
+the default vmode in a class scope is public.
+
+In *methods* and *blocks* no calls are replaced and all methods defined with
+@def@ will be public.
 
 If your code doesn't do anything tricky, then the compile time heuristic
-should just work as expected. Here is an example, where it fails:
+should just work as expected. Here is an example:
+
+PRE
+# start of file
+# default vmode is private
+def m1; end # private
+
+public # this call will be replaced with nil
+# vmode is now public
+def m2; end # public
+
+class A
+  # default vmode is public
+  def m2; end # public
+
+  private # this call will be replaced with nil
+  # vmode is now private
+  def m3 # private
+    def foo # public, because it is in a method
+    end
+  end
+
+end
+
+protected # this call is not replaced and will probably fail because
+          # #protected is not defined at toplevel
+
+# end of file
+PREEND
+
+Here is an example, where it fails:
 
 PRE
 class A
   def pub; end # public
 
-  private if nil # Ruby2CExtension sees a call to private, so all following defs
-                 # will be private
+  private if nil # Ruby2CExtension replaces the call to private with nil
+  # vmode is now private
+
   def pub2; end # will be private in the compiled C extension
-  define_method(:pub3) {} # will be public
 end
 PREEND
 
-As above calling methods like @private@ in a compiled C extension can affect
-the calling Ruby code:
+But this should be a pretty uncommon case. The visibility of methods defined
+using @def@ should be correct for most Ruby code.
+
+It is a bit more complicated for methods/attributes defined using
+@define_method@ or the @attr*@ methods. Their visibility is determined by
+Ruby's internal vmode at run time.
+
+As explained above, C extension code does not get its own SCOPE, so it also
+doesn't get its own vmode. When require'ing a C extension, Ruby sets the vmode
+to public before loading the C extension. All the class/module scopes, that
+are executed when require'ing, are executed in the same SCOPE and so also with
+the same vmode.
+
+Because all the vmode changing method calls are replaced with @nil@, Ruby's
+internal vmode will probably stay public all the time and so all
+methods/attributes defined using @define_method@ or the @attr*@ methods will
+be public. Here is an example:
+
+PRE
+# Ruby's internal vmode is public
+class A
+  # still the same internal vmode, still public
+  define_method(:a) {} # public
+
+  private # is replaced with nil, does not affect Ruby's internal vmode
+  def b; end # private
+
+  # but Ruby's internal vmode is still public
+  define_method(:c) {} # public
+  attr_accessor :d, :e # also public
+end
+PREEND
+
+If those methods really need another visibility, then it can be changed
+explicitly:
+
+PRE
+class A
+  define_method(:a) {}
+  private :a
+end
+PREEND
+
+In methods the internal vmode is that of the nearest Ruby SCOPE (as explained
+above), so it is usually unpredictable. And additionally calling one of the
+vmode changing methods will also affect the SCOPE of the caller:
 
 PRE
 # in compiled C extension
@@ -161,33 +258,8 @@ class A
 end
 PREEND
 
-To be save, don't use the methods @private@, @public@, ... without arguments,
-if they are used with arguments (like @private :meth1, :meth2@), they will not
-change the current vmode.
-
-You are also save if you only use them in class scopes (which should usually
-be the case), because the class scopes are run directly when requiring the
-compiled C extension and Ruby will reset the vmode to the previous value
-afterwards.
-
-Here is an example which works as expected and is safe:
-
-PRE
-# start of foo.rb
-def m1; end # private
-class A
-  def m2; end # public
-  private
-  def m3; end # private
-  define_method(:m4) {} # private
-  protected
-  def m5; end # protected
-end
-def m6; end # private
-public
-def m7; end # public
-# end of foo.rb
-PREEND
+To be save, don't use the vmode changing methods without arguments inside
+methods, instead set the visibility explicitly (e.g. @private :a@).
 
 
 h2. Cref
