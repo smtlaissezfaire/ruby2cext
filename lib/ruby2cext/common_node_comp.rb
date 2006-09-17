@@ -684,15 +684,17 @@ module Ruby2CExtension
 			}
 			# now call rb_rescue2 with the two bodies (and handle else if necessary)
 			c_scope_res {
-				l "long save_state = #{get_wrap_ptr}->state, do_else;"
+				else_node = hash[:else]
+				l "long save_state = #{get_wrap_ptr}->state;"
+				l "long do_else;" if else_node
 				wp = "(VALUE)#{get_wrap_ptr}"
 				assign_res("rb_rescue2(#{body}, #{wp}, #{res_bodies}, #{wp}, rb_eException, (VALUE)0)")
-				l "do_else = #{get_wrap_ptr}->state & 1;"
+				l "do_else = #{get_wrap_ptr}->state & 1;" if else_node
 				l "#{get_wrap_ptr}->state = (#{get_wrap_ptr}->state & ~1) | (save_state & 1);" # restore the 1st bit of save_state
 				CFunction::Wrap::handle_wrap_cflow(self, cflow_hash)
-				if els = hash[:else]
+				if else_node
 					c_if("do_else") {
-						assign_res(comp(els))
+						assign_res(comp(else_node))
 					}
 				end
 				"res"
