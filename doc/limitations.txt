@@ -42,7 +42,7 @@ h2. Arity
 
 All methods and procs defined in Ruby code that is compiled to a C extension
 will return @-1@ as @arity@. So if your Ruby code depends on the method
-@arity@, you might have to change your code.
+@arity@, you might have to change it.
 
 
 h2. Continuations
@@ -393,6 +393,31 @@ But again, for most cases it should just work and maybe it will get better in
 future Ruby2CExtension versions.
 
 
+h2. @super@ with implicit arguments and optional arguments
+
+In a compiled C extension @super@ with implicit arguments will not use
+optional arguments, that have not been given by the original caller. Example:
+
+PRE
+class A
+  def foo(*a)
+    p a
+  end
+end
+
+class B < A
+  def foo(a = nil)
+    super
+  end
+end
+
+B.new.foo
+PREEND
+
+In Ruby this code will output @[nil]@, in the compiled form it will output
+@[]@.
+
+
 h2. Not Supported Features
 
 Ruby files that use one or more of the above described problematic things will
@@ -474,3 +499,26 @@ The @defined?@ statement is also not fully supported, it works for most of the
 common cases like constants, global variables, instance variables, class
 variables and @$~@ (and derived). Ruby2CExtension fails at compile time if a
 case is not supported.
+
+
+h3. @super@ with implicit arguments in Ruby 1.8.5
+
+For Ruby 1.8.5 @super@ with implicit arguments is only supported in methods (not in blocks or
+@rescue@/@ensure@ clauses). For Ruby 1.8.4 @super@ with implicit arguments is
+supported everywhere.
+
+To work around this problem, just specify the arguments explicitly:
+
+PRE
+def foo(a, b)
+  3.times { super(a, b) }
+end
+PREEND
+
+instead of:
+
+PRE
+def foo(a, b)
+  3.times { super }
+end
+PREEND
