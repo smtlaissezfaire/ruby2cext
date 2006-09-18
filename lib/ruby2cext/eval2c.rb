@@ -1,4 +1,5 @@
 
+require "rubynode"
 require "digest/sha1"
 require "ruby2cext/compiler"
 require "ruby2cext/error"
@@ -32,14 +33,16 @@ module Ruby2CExtension
 			@digest_extra = Ruby2CExtension::FULL_VERSION_STRING + @plugins.inspect.split(//).sort.join("")
 		end
 
-		def compile_to_proc(code_str)
-			name = "#{prefix}_#{Digest::SHA1.hexdigest(code_str + @digest_extra)}"
+		private
+
+		def compile_helper(digest_str)
+			name = "#{prefix}_#{Digest::SHA1.hexdigest(digest_str + @digest_extra)}"
 			gvar_name = "$__#{name}__"
 			dl_filename = File.join(path, "#{name}.#{Compiler::DLEXT}")
 			if !File.exists?(dl_filename) || (force_recompile && !@done[name])
 				c = Compiler.new(name, logger)
 				c.add_plugins(plugins)
-				c.add_rb_file("BEGIN { #{gvar_name} = proc { #{code_str} } }", name) # BEGIN {} to get public vmode
+				yield c, name, gvar_name
 				c_filename = File.join(path, "#{name}.c")
 				File.open(c_filename, "w") { |f| f.puts(c.to_c_code) }
 				unless Compiler.compile_c_file_to_dllib(c_filename, logger) == dl_filename
@@ -49,6 +52,14 @@ module Ruby2CExtension
 			end
 			require dl_filename
 			eval(gvar_name) # return the proc
+		end
+
+		public
+
+		def compile_to_proc(code_str)
+			compile_helper(code_str) { |compiler, name, gvar_name|
+				compiler.add_rb_file("#{gvar_name} = proc { #{code_str} }", name)
+			}
 		end
 
 		def module_eval(mod, code_str)
@@ -62,6 +73,55 @@ module Ruby2CExtension
 
 		def toplevel_eval(code_str)
 			compile_to_proc(code_str).call
+		end
+
+		def compile_methods(mod, *methods)
+			methods = methods.map { |m| m.to_sym }.uniq
+			defs = methods.map { |m|
+				bnode = mod.instance_method(m).body_node
+				unless bnode.type == :scope
+					raise Ruby2CExtError, "the method #{m} cannot be compiled, only methods defined using def can be compiled"
+				end
+				[:defn, {:mid => m, :defn => bnode.transform(Compiler::NODE_TRANSFORM_OPTIONS)}]
+			}
+			node_tree = [:scope, {:next => [:gasgn, {:vid => :$test, :value =>
+				[:iter, {
+					:var => false,
+					:iter => [:fcall, {:args => false, :mid => :proc}],
+					:body => [:block, defs]
+				}]
+			}]}]
+			# save current visibility of the methods
+			publ_methods = mod.public_instance_methods.map { |m| m.to_sym } & methods
+			prot_methods = mod.protected_instance_methods.map { |m| m.to_sym } & methods
+			priv_methods = mod.private_instance_methods.map { |m| m.to_sym } & methods
+			# compile to test if the methods don't need a cref and to get a string for the hash
+			c = Compiler.new("test")
+			c.add_toplevel(c.compile_toplevel_function(node_tree))
+			test_code = c.to_c_code(nil) # no time_stamp
+			# don't allow methods that need a cref, because the compiled version would get a different cref
+			if test_code =~ /^static void def_only_once/ # a bit hackish ...
+				raise Ruby2CExtError, "the method(s) cannot be compiled, because at least one needs a cref"
+			end
+			# compile the proc
+			def_proc = compile_helper(test_code) { |compiler, name, gvar_name|
+				node_tree.last[:next].last[:vid] = gvar_name.to_sym
+				compiler.add_toplevel(compiler.compile_toplevel_function(node_tree))
+			}
+			# try to remove all the methods
+			mod.module_eval {
+				methods.each { |m|
+					remove_method(m) rescue nil
+				}
+			}
+			# add the compiled methods
+			mod.module_eval &def_proc
+			# restore original visibility
+			mod.module_eval {
+				public *publ_methods unless publ_methods.empty?
+				protected *prot_methods unless prot_methods.empty?
+				private *priv_methods unless priv_methods.empty?
+			}
 		end
 
 	end
