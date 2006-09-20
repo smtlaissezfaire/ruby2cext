@@ -8,7 +8,9 @@ p self
 puts
 p 1,1.2,(p 23;-1),:sym,1...1,1..1
 p [1,2],"oij\0iuj","",[1,[2,[3,4]]]
-p 1,*[2,3]
+begin
+	p 1,*[2,3]
+end while false
 p({:a=>[1], :b=>[2]}.values_at(:a, :b))
 p [1,2,3].index(2)
 a=b="hello"

@@ -204,17 +204,25 @@ module Ruby2CExtension
 				l "#{var_name}[#{i}] = #{comp(n)};"
 			}
 		end
-		def build_args(args, extra = 0)
+		def build_args(args, one_extra = false)
 			if args.first == :array
 				l "const int argc = #{args.last.size};"
-				build_c_arr(args.last, "argv", extra)
+				build_c_arr(args.last, "argv", one_extra ? 1 : 0)
 			else
 				l "int argc; VALUE *argv;"
+				l "volatile VALUE argv_ary;" if in_while?
 				assign_res(comp(args))
 				l "if (TYPE(res) != T_ARRAY) res = rb_ary_to_ary(res);"
 				l "argc = RARRAY(res)->len;"
-				l "argv = ALLOCA_N(VALUE, argc + #{extra});"
-				l "MEMCPY(argv, RARRAY(res)->ptr, VALUE, argc);"
+				if in_while?
+					# don't use ALLOCA_N in a while loop to avoid a stack overflow
+					l "argv_ary = rb_ary_dup(res);"
+					l "rb_ary_push(argv_ary, Qnil);" if one_extra
+					l "argv = RARRAY(argv_ary)->ptr;"
+				else
+					l "argv = ALLOCA_N(VALUE, argc#{one_extra ? " + 1" : ""});"
+					l "MEMCPY(argv, RARRAY(res)->ptr, VALUE, argc);"
+				end
 			end
 		end
 
@@ -785,7 +793,7 @@ module Ruby2CExtension
 					l "VALUE oa1_recv, oa1_val;"
 					l "oa1_recv = #{comp(hash[:recv])};"
 					c_scope_res {
-						build_args(hash[:args].last[:body], 1)
+						build_args(hash[:args].last[:body], true)
 						l "oa1_val = rb_funcall3(oa1_recv, #{sym(:[])}, argc, argv);"
 						mid = hash[:mid]
 						rval = hash[:args].last[:head]

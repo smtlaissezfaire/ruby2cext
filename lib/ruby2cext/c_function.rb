@@ -52,9 +52,11 @@ module Ruby2CExtension
 				raise Ruby2CExtError::Bug, "popped from empty while stack" if @while_stack.empty?
 				@while_stack.pop
 			end
-			def in_while?(lbl_type)
+			def in_while?(lbl_type = nil)
 				return false if @while_stack.empty?
 				case lbl_type
+				when nil
+					true
 				when :redo
 					@while_stack.last[0]
 				when :next
