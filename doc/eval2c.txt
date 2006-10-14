@@ -1,0 +1,146 @@
+
+h1. Eval2C
+
+Eval2C is a class that allows the compilation of Ruby code to a C extension at
+runtime. The compiled C extension will be require'd automatically and the
+compiled code will be available as a Proc.
+
+It is easy to integrate Eval2C into existing scripts or libraries to improve
+performance. It is also pretty simple to provide fallback code for when
+Ruby2CExtension is not available.
+
+
+h2. Basic Usage
+
+Here is an example:
+
+PRE
+require "ruby2cext/eval2c"
+
+$e2c = Ruby2CExtension::Eval2C.new
+
+$e2c.toplevel_eval("puts 'hello'") # prints hello
+PREEND
+
+First you need to create an Eval2C instance, this instance basically stores
+the options/configuration. In the above example no options were given, so the
+defaults are used. The available options are explained below.
+
+The last line of the example does what the method name suggests: the string of
+Ruby code is evaluated at the toplevel (i.e. not inside any class scope). To
+be more precise, that last line is equivalent to this Ruby code:
+
+PRE
+$some_global_var = proc { puts 'hello' }
+$some_global_var.call
+PREEND
+
+The proc is compiled to a C extension that C expension is then require'd and
+finally the proc is called.
+
+The implementation of @toplevel_eval@ is actually pretty simple:
+
+PRE
+def toplevel_eval(code_str)
+  compile_to_proc(code_str).call
+end
+PREEND
+
+So the main work is done by @compile_to_proc@, which can also be used
+directly:
+
+PRE
+$e2c.compile_to_proc("|a,b| a+b").call(2, 3) # => 5
+PREEND
+
+There are some things to note: The proc won't have access to local variables
+and it will be defined at toplevel, which is important for constant lookup:
+
+PRE
+SOME_CONST = :toplevel
+
+class A
+  SOME_CONST = :A
+  $e2c.compile_to_proc("SOME_CONST") # => :toplevel, not :A!
+end
+PREEND
+
+Eval2C also offers equivalents to Ruby's @module_eval@/@class_eval@ and
+@instance_eval@:
+
+PRE
+class A
+  $e2c.module_eval(self, %{
+    def initialize(x)
+      @x = x
+    end
+    def foo(y)
+      @x + y
+    end
+  })
+end
+
+A.new(5).foo(6) # => 11
+
+$e2c.instance_eval("4321", "reverse") # => "1234"
+PREEND
+
+There implementation is very similar to that of @toplevel_eval@:
+
+PRE
+def module_eval(mod, code_str)
+  mod.module_eval(&compile_to_proc(code_str))
+end
+alias :class_eval :module_eval
+
+def instance_eval(object, code_str)
+  object.instance_eval(&compile_to_proc(code_str))
+end
+PREEND
+
+With @module_eval@/@class_eval@ it is possible selectively compile some
+performance critical methods to C and leave the rest in Ruby.
+
+But there is one more thing: @compile_methods@
+
+Defining the methods using @module_eval@ as in the last example, has at least
+one downside: it won't play nice with syntax-highlighting text editors,
+because the code of the methods is actually in a string. It would be much
+nicer to @def@ the methods the normal way and then just compile them
+afterwards.
+
+Thanks to @compile_methods@ this is possible:
+
+PRE
+class A
+  def initialize(x)
+    @x = x
+  end
+  def foo(y)
+    @x + y
+  end
+
+  $e2c.compile_methods(self, :initialize, :foo)
+end
+
+A.new(5).foo(6) # => 11
+PREEND
+
+@compile_methods@ will grab the methods' node trees using RubyNode, compile
+them to C and then replace the old methods with the C versions. The visibility
+of the old methods will be preserved.
+
+There are some limitations: @compile_methods@ only works with methods defined
+using @def@ and the methods must not need a cref (for more informations on
+what crefs are please see the respective section in
+"limitations":limitations.html). This mainly means that constants must be
+prefixed with a double colon: Array needs a cref, ::Array
+does not.
+
+
+h2. Options
+
+
+
+
+h3. Implementation details
