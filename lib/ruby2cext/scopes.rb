@@ -129,7 +129,12 @@ module Ruby2CExtension
 						return get_closure_var(cur.depth, i)
 					end
 				end
-				raise Ruby2CExtError, "unexpected dvar: #{sym}"
+				# Ruby versions <= 1.8.5 should/will never reach here
+				# (otherwise it is a bug in the parser).
+				# But starting after 1.8.5 dvars are only initialized, if there
+				# is an assignment in a sub-block. Because of that we can reach
+				# here, in that case we want a new dvar_curr:
+				get_dvar_curr(sym)
 			end
 			def get_dvar_curr(sym)
 				unless (i = tbl.index(sym))
