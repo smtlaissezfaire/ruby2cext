@@ -1,0 +1,130 @@
+
+h1. rb2cx
+
+@rb2cx@ is the command line interface to the functionality of Ruby2CExtension.
+It takes one or more Ruby files, translates them to equivalent C extensions
+and optionally compiles them with the C compiler.
+
+
+h2. Overview
+
+The general usage is very simple, just run @rb2cx@ with the filenames of the
+Ruby files as arguments:
+
+PRE
+rb2cx file1.rb file2.rb
+PREEND
+
+This will produce @file1.c@, @file2.c@ and the compiled extension @file1.so@,
+@file2.so@ (the file extension depends on the platform).
+
+Additionally it is possible to specify some options before the filenames.
+
+
+h2. General Options
+
+* @-h@/@--help@: a help message is printed and the program exits regardless of
+  other arguments.
+* @-c@/@--only-c@: only the translate to C code is performed, the compilation
+  to native extensions is omited.
+* @-v@/@--verbose@: some status messages are printed, e.g. which files are
+  currently translated or compiled.
+* @-w@/@--warnings@: warnings are printed for some things that might not work
+  as expected. The warnings do not cover everything mentioned in the
+  "limitations documentation":limitations.html.
+* @-V@/@--version@: the Ruby2CExtension version is printed.
+
+
+h2. Include Option
+
+Ruby2CExtension has an experimental feature that allows dependencies of a
+compiled Ruby file to be included in the same extension. This is best
+described with an example. Let's say we have 3 files: @a.rb@, @b.rb@ and
+@c.rb@:
+
+PRE
+# a.rb
+puts "a"
+class A; end
+PREEND
+
+PRE
+# b.rb
+puts "b"
+require "a"
+class B; end
+PREEND
+
+PRE
+# c.rb
+require "a"
+require "b"
+puts "c"
+PREEND
+
+The @require@-include feature is enabled if the @-I@/@--include@ option
+followed by a search path is given (possibly multiple times). The search paths
+can be absolute or relative paths, they are searched for <code>require</code>d
+files. So, if the example is compiled to a C extension with
+
+PRE
+rb2cx -I . c.rb
+PREEND
+
+then the following will happen. For each call to @require@ with no explicit
+receiver and one argument that is a simple string (i.e. no interpolation) the
+search paths are searched for a file that matches the argument to the
+@require@ call (with an algorithm similar to Ruby's). If no matching file is
+found, then the call to @require@ is compiled as usual. But if a matching file
+is found, then that file is read and it is translated to C and instead of
+compiling the original @require@ call that translated C code will be executed,
+unless a @require@ of that file was encountered before.
+
+So in the example we will get one C extension, that contains the code of all
+three files and the <code>require</code>s are performed at the right moment
+and in correct order. The output will be (notice that the <code>require
+"a"</code> in @b.rb@ does not result in a second execution of @a.rb@, as
+expected):
+
+PRE
+a
+b
+c
+PREEND
+
+As stated above, this feature is experimental, it should work well for many
+cases, e.g. for a library that has one main file which is always
+<code>require</code>d by user code, but is split into multiple files for
+maintenance. Such a library could be compiled into a single C extension. But
+it can break for various reasons, e.g. Ruby will not be aware, that the
+included files are already "<code>require</code>d" (so if a file is already
+included in a C extension, but also <code>require</code>d by other normal Ruby
+code, then that file will in effect execute twice).
+
+If the verbose mode is enabled (the @-v@/@--verbose@ option), then each
+inclusion of a file will be logged. This way one can easily check if the
+expected files are actually included.
+
+
+h2. Optimization Options
+
+Ruby2CExtension can use various "optimizations":optimizations.html to improve
+the performance of the resulting C extension. These optimizations are not
+enabled by default, because they can all result in wrong behavior. The
+optimizations are enabled by the @-O@/@--optimization@ option followed by one
+of the following optimization names:
+
+* @const_cache@: enables constant lookup caching
+* @builtin_methods@: enables optimization of calls to built-in methods
+* @inline_methods@: enables inlining of some built-in methods
+* @case_optimize@: enables case optimization
+* @all@: enables all of the above optimizations
+
+
+h2. Examples
+
+PRE
+rb2cx -wv file.rb
+rb2cx -I . -O all file.rb
+rb2cx -I . -I ../libs -O const_cache -O builtin_methods -w file.rb
+PREEND

@@ -2,8 +2,8 @@
 h1. Eval2C
 
 Eval2C is a class that allows the compilation of Ruby code to a C extension at
-runtime. The compiled C extension will be require'd automatically and the
-compiled code will be available as a Proc.
+runtime. The compiled C extension will be <code>require</code>d automatically
+and the compiled code will be available as a Proc.
 
 It is easy to integrate Eval2C into existing scripts or libraries to improve
 performance. It is also pretty simple to provide fallback code for when
@@ -35,8 +35,8 @@ $some_global_var = proc { puts 'hello' }
 $some_global_var.call
 PREEND
 
-The proc is compiled to a C extension that C expension is then require'd and
-finally the proc is called.
+The proc is compiled to a C extension, that C expension is then
+<code>require</code>d and finally the proc is called.
 
 The implementation of @toplevel_eval@ is actually pretty simple:
 
@@ -61,7 +61,7 @@ SOME_CONST = :toplevel
 
 class A
   SOME_CONST = :A
-  $e2c.compile_to_proc("SOME_CONST") # => :toplevel, not :A!
+  $e2c.compile_to_proc("SOME_CONST").call # => :toplevel, not :A!
 end
 PREEND
 
@@ -85,7 +85,8 @@ A.new(5).foo(6) # => 11
 $e2c.instance_eval("4321", "reverse") # => "1234"
 PREEND
 
-There implementation is very similar to that of @toplevel_eval@:
+Their implementations also use @compile_to_proc@ and they are very similar to
+the implementation of @toplevel_eval@:
 
 PRE
 def module_eval(mod, code_str)
@@ -98,7 +99,7 @@ def instance_eval(object, code_str)
 end
 PREEND
 
-With @module_eval@/@class_eval@ it is possible selectively compile some
+With @module_eval@/@class_eval@ it is possible to selectively compile some
 performance critical methods to C and leave the rest in Ruby.
 
 But there is one more thing: @compile_methods@
@@ -134,13 +135,112 @@ There are some limitations: @compile_methods@ only works with methods defined
 using @def@ and the methods must not need a cref (for more informations on
 what crefs are please see the respective section in
 "limitations":limitations.html). This mainly means that constants must be
-prefixed with a double colon: Array needs a cref, ::Array
-does not.
+prefixed with a double colon: @Array@ needs a cref, while @::Array@ does not.
 
 
 h2. Options
 
+Eval2C is configured with an option hash, the available options are:
+
+* @:path@: this is the path where the compiled extensions are stored, the
+  default is the directory @.ruby2cext@ in the current users home dir.
+* @:prefix@: this is the prefix for the names of the generated extensions, the
+  names of the extensions are generated from this prefix and a SHA1 digest of
+  the code and options. The default is @"eval2c"@ and it is generally not
+  necessary to change it.
+* @:plugins@: this is used to configure the options for the compilation
+  (compare "rb2cx":rb2cx.html) and it is another option hash. The default is
+  <code>{:optimizations => :all}</code>, but all of the following keys are
+  possible:
+** @:warnings@: if set to @true@, then warnings about possible problems will
+   be sent to the logger (see below).
+** @:require_include@: can be set to a single search path or an array of
+   search paths (equivalent to the @-I@ option of @rb2cx@).
+** @:optimizations@: yet another option hash to configure the
+   "optimizations":optimizations.html. The valid keys are @:const_cache@,
+   @:builtin_methods@, @:inline_methods@ and @:case_optimize@, each with
+   @true@ or @false@ as value. To just use all optimizations it is also
+   possible to just use the symbol @:all@ instead of the hash.
+* @:logger@: used for log messages, can be either @nil@ or an instance of
+  @Logger@ (<code>require "logger"</code>). The default is @nil@, which means
+  that no output is generated.
+* @:force_recompile@: if this is set to @true@, then each generated extension
+  is (re)compiled, even if it is already available from a previous run. The
+  default is @false@.
+
+Some examples:
+
+PRE
+Eval2C.new(:path => ".", :plugins => {})
+Eval2C.new(:plugins => {:require_include=>[".", "../lib"], :optimizations=>:all})
+Eval2C.new(:plugins => {:warnings=>true, :optimizations=>{:builtin_methods=>true}})
+Eval2C.new(:prefix => "my_lib_name", :logger => Logger.new(STDOUT))
+PREEND
 
 
+h2. Implementation Details
 
-h3. Implementation details
+The @compile_to_proc@ method works as follows:
+
+# The name of the extension is determined from the given prefix combined with
+  the SHA1 digest of the Ruby code and some extra data (Ruby version,
+  Ruby2CExtension version and plugin options). So the code determines the
+  extension name and if the same code is compiled with the same version and
+  settings, the name will be the same. This allows very simple and efficient
+  caching of the compiled extensions.
+# From the extension name a global variable name is constructed. The compiled
+  proc will be stored in that global variable by the generated C extension.
+# If the extension with the generated name already exists, then we are
+  basically done and can skip this step. Otherwise the Ruby proc code is
+  translated to C and compiled to a C extension in the specified path.
+# The generated or already existing C extension is <code>require</code>d.
+# The global variable that now contains the compiled proc is read and the
+  result is returned.
+
+The @compile_methods@ method works similar.
+
+As mentioned above, this scheme allows very efficient caching of the C
+extensions. Basically each extension is only compiled once when the
+program/library is executed for the first time. In later runs the extension
+will already exist and just be <code>require</code>d.
+
+Adding the Ruby version and the Ruby2CExtension version to the digest avoids
+problems if multiple versions of Ruby or Ruby2CExtension are installed and
+used in parallel and it also guarantees that the extensions are automatically
+recompiled if Ruby or Ruby2CExtension are updated.
+
+
+h2. Using Eval2C Only When It Is Available
+
+Having Ruby2CExtension as a hard dependency just for some speedup might not
+be acceptable for many projects, in particular since Ruby2CExtension requires
+that a C compiler is available at runtime.
+
+An alternative that avoids the hard dependency is to use Ruby2CExtension only
+if it is installed anyway and otherwise just execute the Ruby code as usual.
+This works works very well if Eval2C and @compile_methods@ is used, for
+example:
+
+PRE
+begin
+  require "ruby2cext/eval2c"
+  $e2c = Ruby2CExtension::Eval2C.new
+rescue LoadError
+  $e2c = nil
+end
+
+class A
+  def initialize(x)
+    @x = x
+  end
+  def foo(y)
+    @x + y
+  end
+
+  $e2c && $e2c.compile_methods(self, :initialize, :foo)
+end
+PREEND
+
+So if Ruby2CExtension is available, then the methods will be compiled and
+fast, otherwise the Ruby code will just work as well (but it might be a bit
+slower of course).

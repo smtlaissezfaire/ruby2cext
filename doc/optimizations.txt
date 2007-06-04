@@ -1,0 +1,183 @@
+
+h1. Optimizations
+
+Without any optimizations enabled Ruby2CExtension tries to match Ruby's
+semantics as close as possible, but sometimes it might be desired to sacrifice
+some compatibility in exchange for faster execution.
+
+Ruby2CExtension offers different optimizations which can be enabled
+indivdually (see "rb2cx":rb2cx.html and "Eval2C":eval2c.html). All these
+optimizations should be safe, i.e. they won't produce segfaults or other C
+level failures, but, as mentioned above, they sacrifice compatibility for
+faster execution and thus can result in "wrong" behavior of the compiled Ruby
+code.
+
+
+h2. Constant Lookup Caching
+
+This optimization simply assumes that constants really are constant. So the
+constant lookup for each constant is only performed once and then the result
+is cached for later use.
+
+Because in Ruby constants can actually change their value, this optimization
+can lead to wrong results. So if your code depends on changing constants, then
+this optimization should not be enabled. Otherwise it can provide a small
+performance improvement.
+
+
+h2. Optimization of Calls to Built-in Methods
+
+This optimization is by far the most important one, because it can produce
+very significant speedups for most Ruby code. It replaces normal calls to many
+(C-implemented) methods of the built-in classes with (almost) direct calls to
+the C functions that implement these methods.
+
+The motivation behind this optimization is that method calls are generally
+considered to be one of the "slowest" parts of Ruby and since almost
+everything is method calls in Ruby it helps to improve at least some of them.
+A method call basically consists of two parts: first the method is looked up
+in the receivers class (or its ancestors) and then Ruby sets up the
+environment for the method and executes the code. For many of the
+C-implemented methods of the built-in classes the setup is not necessary and
+if we assume that they are generally not change we can also avoid the lookup,
+so we basically can directly call the C function that implements the method
+and thereby avoid most of the method call overhead in that case.
+
+Because this can not be done for every C-implemented method, there is a list
+of method names (with arities and built-in types that have this method) for
+which the optimization can be applied. When a call to such a method is
+compiled, instead of doing a normal @rb_funcall()@, another C function is
+called which checks if the type of the receiver matches one of the built-in
+types that have this method and if yes, then the implementing C function is
+called directly otherwise a normal Ruby call is performed.
+
+To be able to directly call the C functions that implement the methods the
+pointers to these C functions have to be looked up at least once. So, when the
+C extension is <code>require</code>d, for all methods that are used in this
+extension the pointers to the C functions are looked up. This is also kind of
+a sanity check: if that lookup fails or the lookup returns that the method is
+not implemented by a C function (e.g. because it was modified/overridden by a
+Ruby implementation), then this method will later be called by just using
+@rb_funcall()@.
+
+The built-in types which are included in this optimization are @Array@,
+@Bignum@, @FalseClass@, @Fixnum@, @Float@, @Hash@, @NilClass@, @Regexp@,
+@String@, @Symbol@ and @TrueClass@. For the detailed method list please see
+@lib/ruby2cext/plugins/builtin_methods.rb@.
+
+If the type of the receiver is known at compile time, then it is possibly to
+even further optimize by directly calling the implementing C function, instead
+of doing the indirect call with the runtime type checking. An example for such
+a case is the expression <code>1 == some_var</code>, in this expression the
+receiver is a fixnum. The compile time type detection also works for string
+literals, array literals, hash literals and regexp literals.
+
+As mentioned above, this optimization can speedup most Ruby code, but it also
+has downsides:
+
+* If the type of the receiver of such a method call is not one of the
+  supported built-in types, then the call will actually be slightly slower
+  than it would have been without the optimization (because of the additional
+  type check). But the overhead is very small.
+* If one of the supported methods is modified after the compiled C extension
+  is <code>require</code>d, then this modification will not be used in the
+  extension, the extension will just continue to use the C implementation.
+
+But in general this optimization can and should always be used, unless it is
+necessary to modify built-in methods after the extension is
+<code>require</code>d.
+
+
+h2. Inlining of Some Built-in Methods
+
+This optimization goes one step further than the previous optimization by
+avoiding the method calls completely and instead directly inlining the code
+for the following methods: @nil?@, @equal?@ and @__send__@ (without a block).
+
+Because these three methods should never be redefined in any class (according
+to their documentation), this optimization can be applied to all calls of
+these methods (with the correct arities) independent of the type of the
+receiver.
+
+Details:
+
+* Any call to @nil?@ with no arguments will be translated to a simple check
+  that determines if the receiver is @nil@.
+* Any call to @equal?@ with one argument will be translated to a simple check
+  that determines if the receiver is equal to the first argument (i.e. they
+  have the same id).
+* Any call to @__send__@ with one or more arguments and without a block will
+  be translated to code that directly performs the method call. As a result
+  <code>__send__(:foo, 1, 2, 3)</code> will perform practically as fast as
+  <code>foo(1, 2, 3)</code> in compiled code.
+
+In general this optimization can and should always be used, unless one of the
+affected methods is redefined somewhere.
+
+
+h2. Case Optimization
+
+This optimization can in some cases transform Ruby @case@/@when@ statements to
+real C @switch@/@case@ statements. This works for cases with Ruby immediate
+values, for which the integral value is known at compile time, i.e. @nil@,
+@true@, @false@ and fixnums.
+
+These cases have to be put at the beginning, all following non optimizable
+whens will be handled normally. Example:
+
+PRE
+case x
+when true
+  # opt
+when 2, 3, nil
+  # opt
+when false, 26
+  # opt
+when /foo/
+  # normal
+when 23
+  # normal because, it is after another normal case
+end
+PREEND
+
+This basically gets converted to the following C code:
+
+PRE
+switch (eval(x)) {
+case Qtrue:
+  code;
+  break;
+case LONG2FIX(2):
+case LONG2FIX(3):
+case Qnil:
+  code;
+  break;
+case Qfalse:
+case LONG2FIX(26):
+  code;
+  break;
+default:
+  other cases ...
+}
+PREEND
+
+There also is a fallback that ensures that cases like
+
+PRE
+case 2.0
+when 2
+  ...
+end
+PREEND
+
+still work.
+
+This optimization can be useful for some kind of opcode dispatch in an
+interpreter for example.
+
+It should always produce the correct results, unless the @===@ method of
+@Fixnum@, @TrueClass@, @FalseClass@ or @NilClass@ is modified. So it is
+generally okay to enable this optimization.
+
+The gained speedup is not really big, but it can be useful for larger
+@case@/@when@ statements.

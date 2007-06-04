@@ -48,7 +48,7 @@ will return @-1@ as @arity@. So if your Ruby code depends on the method
 h2. Continuations
 
 Continuations (@callcc@) are possible in compiled Ruby code, but you might see
-wrong behaviour with local variables (i.e. they will have an old value),
+wrong behavior with local variables (i.e. they will have an old value),
 depending on whether these local variables are needed for a closure or not.
 
 In short, you probably should not use continuations in Ruby code that you want
@@ -126,7 +126,7 @@ visibility newly defined methods get.
 
 Ruby2CExtension can not (easily) access Ruby's internal vmode, instead it
 tries to figure out at compile time what visibility a method defined using
-@def@ will get.  But be careful with @Module#define_method@ and
+@def@ will get. But be careful with @Module#define_method@ and
 @Module#attr*@: those methods will use Ruby's internal vmode.
 
 So, there are actually two different vmodes at work for compiled Ruby
@@ -203,10 +203,10 @@ It is a bit more complicated for methods/attributes defined using
 Ruby's internal vmode at run time.
 
 As explained above, C extension code does not get its own SCOPE, so it also
-doesn't get its own vmode. When require'ing a C extension, Ruby sets the vmode
-to public before loading the C extension. All the class/module scopes, that
-are executed when require'ing, are executed in the same SCOPE and so also with
-the same vmode.
+doesn't get its own vmode. When a C extension is <code>require</code>d, Ruby
+sets the vmode to public before loading the C extension. All the class/module
+scopes, that are executed during the @require@, are executed in the same SCOPE
+and so also with the same vmode.
 
 Because all the vmode changing method calls are replaced with @nil@, Ruby's
 internal vmode will probably stay public all the time and so all
@@ -313,8 +313,8 @@ PRE
 }
 PREEND
 
-The second case fails because the constant lookup for Array needs a cref. If
-you really need this to work, then you can use ::Array instead of Array,
+The second case fails because the constant lookup for @Array@ needs a cref. If
+you really need this to work, then you can use @::Array@ instead of @Array@,
 because that won't need a cref.
 
 Again in the usual case everything should be fine and if you really need to
@@ -501,7 +501,7 @@ variables and @$~@ (and derived). Ruby2CExtension fails at compile time if a
 case is not supported.
 
 
-h3. @super@ with implicit arguments in Ruby 1.8.5
+h3. @super@ with implicit arguments in Ruby 1.8.5 and later
 
 For Ruby 1.8.5 @super@ with implicit arguments is only supported in methods (not in blocks or
 @rescue@/@ensure@ clauses). For Ruby 1.8.4 @super@ with implicit arguments is
