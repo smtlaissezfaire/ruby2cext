@@ -102,7 +102,7 @@ PREEND
 With @module_eval@/@class_eval@ it is possible to selectively compile some
 performance critical methods to C and leave the rest in Ruby.
 
-But there is one more thing: @compile_methods@
+But there is one more thing: @compile_methods@.
 
 Defining the methods using @module_eval@ as in the last example, has at least
 one downside: it won't play nice with syntax-highlighting text editors,
@@ -242,5 +242,5 @@ end
 PREEND
 
 So if Ruby2CExtension is available, then the methods will be compiled and
-fast, otherwise the Ruby code will just work as well (but it might be a bit
+fast, otherwise the Ruby code will just work as usual (but it might be a bit
 slower of course).

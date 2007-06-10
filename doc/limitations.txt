@@ -12,7 +12,7 @@ behave exactly as the Ruby code would.
 
 h2. Warnings and Exceptions
 
-Not all warnings, that Ruby code might emit, are reproduced in the compiled C
+Not all warnings that Ruby code might emit are reproduced in the compiled C
 extension.
 
 Ruby2CExtension also omits some checks that might raise exceptions for Ruby
@@ -29,7 +29,7 @@ exceptions than the Ruby code would.
 
 h2. C Extension Limitations
 
-Because the compiled code will be a C extension it will also behave like a C
+Because the compiled code is a C extension, it will also behave like a C
 extension:
 
 * backtraces will look like backtraces of C extensions (i.e. no line
@@ -58,10 +58,10 @@ to compile to a C extension.
 h2. Scope
 
 In Ruby every scope (class scope, methods, ...) has an associated C struct
-SCOPE which stores the local variables (including @$~@ and @$_@) for that scope.
-Methods that are implemented in a C extension don't get such a SCOPE, because
-it is expensive to set up and they don't need it (they just use variables on
-the stack).
+SCOPE, which stores the local variables (including @$~@ and @$_@) for that
+scope. Methods that are implemented in a C extension don't get such a SCOPE,
+because it is expensive to set up and they don't need it (they just use
+variables on the stack).
 
 That means that the methods in Ruby code that is compiled to a C extension
 won't get a SCOPE either, which is usually no problem because local variables
@@ -205,7 +205,7 @@ Ruby's internal vmode at run time.
 As explained above, C extension code does not get its own SCOPE, so it also
 doesn't get its own vmode. When a C extension is <code>require</code>d, Ruby
 sets the vmode to public before loading the C extension. All the class/module
-scopes, that are executed during the @require@, are executed in the same SCOPE
+scopes that are executed during the @require@ are executed in the same SCOPE
 and so also with the same vmode.
 
 Because all the vmode changing method calls are replaced with @nil@, Ruby's
@@ -287,14 +287,14 @@ The current cref is used for constant and class variable lookup and for @def@,
 Ruby2CExtension emulates cref with the same semantics as Ruby. There are only
 two problems.
 
-First, when a method is defined in Ruby code it saves the current cref for
+First, when a method is defined in Ruby code, it saves the current cref for
 later use. From C it isn't possible to store an extra value when defining a
 method, so Ruby2CExtension works around this problem by storing the cref in a
 global variable. But there is still a problem when a @def@ is used/run
 multiple times, because the cref can differ each time.
 
-So if a @def@, that requires a cref, is used multiple times, then the compiled
-C extension will raise an exception (this is the only case where code compiled
+So if a @def@ that requires a cref is used multiple times, then the compiled C
+extension will raise an exception (this is the only case where code compiled
 with Ruby2CExtension raises an exception that Ruby wouldn't raise). If a @def@
 doesn't need a cref, then everything is fine and it can be used multiple
 times. Examples:
@@ -318,11 +318,11 @@ you really need this to work, then you can use @::Array@ instead of @Array@,
 because that won't need a cref.
 
 Again in the usual case everything should be fine and if you really need to
-use a @def@, that requires a cref, multiple times, then you might be able to
+use a @def@ that requires a cref multiple times, then you might be able to
 modify it so that it won't need a cref.
 
 The second problem that arises from Ruby2CExtension emulating crefs is that
-methods, that access Ruby's internal cref, will see the wrong cref and thus
+methods that access Ruby's internal cref, will see the wrong cref and thus
 not behave as expected. Those methods are @Module.nesting@, @Module.constants@
 (but @Module#constants@ works), @autoload@ and @autoload?@ (use
 @Module#autoload@ and @Module#autoload?@ instead).
@@ -396,7 +396,7 @@ future Ruby2CExtension versions.
 h2. @super@ with implicit arguments and optional arguments
 
 In a compiled C extension @super@ with implicit arguments will not use
-optional arguments, that have not been given by the original caller. Example:
+optional arguments that have not been given by the original caller. Example:
 
 PRE
 class A

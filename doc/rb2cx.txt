@@ -15,7 +15,7 @@ PRE
 rb2cx file1.rb file2.rb
 PREEND
 
-This will produce @file1.c@, @file2.c@ and the compiled extension @file1.so@,
+This will produce @file1.c@, @file2.c@ and the compiled extensions @file1.so@,
 @file2.so@ (the file extension depends on the platform).
 
 Additionally it is possible to specify some options before the filenames.
@@ -25,7 +25,7 @@ h2. General Options
 
 * @-h@/@--help@: a help message is printed and the program exits regardless of
   other arguments.
-* @-c@/@--only-c@: only the translate to C code is performed, the compilation
+* @-c@/@--only-c@: only the translation to C code is performed, the compilation
   to native extensions is omited.
 * @-v@/@--verbose@: some status messages are printed, e.g. which files are
   currently translated or compiled.

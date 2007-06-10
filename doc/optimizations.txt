@@ -39,9 +39,9 @@ A method call basically consists of two parts: first the method is looked up
 in the receivers class (or its ancestors) and then Ruby sets up the
 environment for the method and executes the code. For many of the
 C-implemented methods of the built-in classes the setup is not necessary and
-if we assume that they are generally not change we can also avoid the lookup,
-so we basically can directly call the C function that implements the method
-and thereby avoid most of the method call overhead in that case.
+if we assume that they are generally not modified/redefined, we can also avoid
+the lookup. So we basically can directly call the C function that implements
+the method and thereby avoid most of the method call overhead in these cases.
 
 Because this can not be done for every C-implemented method, there is a list
 of method names (with arities and built-in types that have this method) for
@@ -51,7 +51,7 @@ called which checks if the type of the receiver matches one of the built-in
 types that have this method and if yes, then the implementing C function is
 called directly otherwise a normal Ruby call is performed.
 
-To be able to directly call the C functions that implement the methods the
+To be able to directly call the C functions that implement the methods, the
 pointers to these C functions have to be looked up at least once. So, when the
 C extension is <code>require</code>d, for all methods that are used in this
 extension the pointers to the C functions are looked up. This is also kind of
@@ -179,5 +179,7 @@ It should always produce the correct results, unless the @===@ method of
 @Fixnum@, @TrueClass@, @FalseClass@ or @NilClass@ is modified. So it is
 generally okay to enable this optimization.
 
-The gained speedup is not really big, but it can be useful for larger
-@case@/@when@ statements.
+When this optimization is combined with the built-in methods optimization,
+then the gained speedup is not really big (because the @===@ calls for the
+@when@ cases are optimized by the built-in methods optimization anyway), but
+it can be useful for larger @case@/@when@ statements.
