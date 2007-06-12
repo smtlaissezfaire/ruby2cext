@@ -1,13 +1,26 @@
 Changelog
 
-* implemented control flow "through" ensure/rescue clauses
-* warnings plugin
-* require include plugin
-* builtin method call optimization plugin
-* local constant caching plugin
-* new plugin architecture
-* small fixes
-* split ruby2cext.rb into multiple files
+-- 0.2.0
+
+* New features:
+  * New plugin architecture for optimizations and other things
+  * Optimization plugins: const_cache, builtin_methods, inline_methods,
+    case_optimize
+  * Other plugins: require_include, warnings
+  * Eval2C for compilation at runtime
+  * Available as gem now
+
+* Improvements:
+  * Implemented control flow "through" rescue/ensure clauses
+  * Better vmode handling
+  * Support for Ruby 1.8.5 and 1.8.6
+  * Improved performance for global variables
+
+* Fixes:
+  * Workaround for an issue with ALLOCA_N in while loops
+  * Fixed a problem with case/when (missing newline nodes)
+  * Removed libraries from compile command
+  * Various other small fixes
 
 -- 0.1.0
 
