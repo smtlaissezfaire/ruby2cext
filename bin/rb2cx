@@ -29,10 +29,10 @@ If multiple files are given, each file will be handled separately.
 
 -I / --include path
 
-If a Ruby file require's another Ruby file and that file can be found in the
-given path, then it will be include in the C extension. This option can be used
-multiple times with different pathes, the pathes are then searched in the given
-order. Use --verbose to see which files were included.
+If a Ruby file "require"s another Ruby file and that file can be found in the
+given path, then it will be included in the C extension. This option can be
+used multiple times with different paths, the paths are then searched in the
+given order. Use --verbose to see which files were included.
 
 === Optimization Options:
 
@@ -43,14 +43,14 @@ Where <optimization> is one of the following:
 const_cache
   enables local constant lookup caching
 
-case_optimize
-  optimizes case statments with nil, true, false or Fixnums
-
 builtin_methods
   optimizes calls to many methods of builtin types
 
 inline_methods
   inlines the methods nil?, equal? and __send__
+
+case_optimize
+  optimizes case statments with nil, true, false or Fixnums
 
 all
   enables all of the above optimizations
