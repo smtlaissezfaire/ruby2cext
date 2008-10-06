@@ -52,6 +52,12 @@ inline_methods
 case_optimize
   optimizes case statments with nil, true, false or Fixnums
 
+inline_builtin
+  inlines methods calls to builtin types
+
+cache_call
+  caches method lookup for each call
+  
 all
   enables all of the above optimizations
 
@@ -146,7 +152,12 @@ def main
 				include_paths << arg
 			when "--optimization"
 				case (arg = arg.to_sym)
-				when :const_cache, :case_optimize, :builtin_methods, :inline_methods
+				when :const_cache,
+                                     :case_optimize,
+                                     :inline_builtin,
+                                     :inline_methods,
+                                     :cache_call,
+                                     :builtin_methods
 					optimizations[arg] = true
 				when :all
 					all_optimizations = true

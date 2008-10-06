@@ -151,8 +151,12 @@ module Ruby2CExtension
 			if (opt = options[:optimizations])
 				if opt == :all
 					opt = {
-						:const_cache=>true, :case_optimize=>true,
-						:builtin_methods=>true, :inline_methods=>true
+						:const_cache=>true,
+                                                :case_optimize=>true,
+                                                :inline_builtin=>true,
+                                                :cache_call=>true,
+						:builtin_methods=>true,
+                                                :inline_methods=>true
 					}
 				end
 				if opt[:const_cache]
@@ -163,6 +167,10 @@ module Ruby2CExtension
 					require "ruby2cext/plugins/case_optimize"
 					add_plugin(Plugins::CaseOptimize)
 				end
+                                if opt[:inline_builtin]
+					require "ruby2cext/plugins/inline_builtin"
+					add_plugin(Plugins::InlineBuiltin)
+                                end
 				if opt[:inline_methods]
 					require "ruby2cext/plugins/inline_methods"
 					add_plugin(Plugins::InlineMethods)
@@ -176,6 +184,10 @@ module Ruby2CExtension
 					end
 					add_plugin(Plugins::BuiltinMethods, builtins)
 				end
+                                if opt[:cache_call]
+					require "ruby2cext/plugins/cache_call"
+					add_plugin(Plugins::CacheCall)
+                                end
 			end
 			if (ri_args = options[:require_include])
 				require "ruby2cext/plugins/require_include"
