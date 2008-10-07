@@ -58,6 +58,9 @@ inline_builtin
 cache_call
   caches method lookup for each call
   
+direct_self_call
+  directly calls private or recursive methods defined in same scope
+  
 all
   enables all of the above optimizations
 
@@ -157,7 +160,8 @@ def main
                                      :inline_builtin,
                                      :inline_methods,
                                      :cache_call,
-                                     :builtin_methods
+                                     :builtin_methods,
+                                     :direct_self_call
 					optimizations[arg] = true
 				when :all
 					all_optimizations = true

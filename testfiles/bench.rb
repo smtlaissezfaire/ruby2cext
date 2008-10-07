@@ -50,7 +50,7 @@ def sqrt(x)
 end
 
 
-Benchmark.bm(10) { |bmx|
+Benchmark.bmbm(10) { |bmx|
 	bmx.report("times") { 3000000.times{|e| e + e } }
 	bmx.report("fib") { fib 30 }
 	bmx.report("array") {

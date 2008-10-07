@@ -11,7 +11,7 @@ class CacheCall < Ruby2CExtension::Plugin
 
     def initialize(compiler, need_frame=true)
         super(compiler)
-        @need_frame = need_frame
+        @need_frame = need_frame || nil
         @cache_index = Hash.new { |h,k| h[k] = h.size }
         @argcs = {}
         compiler.add_preprocessor(:call, &method(:handle_call))
@@ -81,10 +81,13 @@ class CacheCall < Ruby2CExtension::Plugin
     
     def global_c_code
         begin
+            #TODO: try handling NOEX_PROTECTED
             code = %{
                 typedef struct {
                     VALUE klass;
                     VALUE (*func)(ANYARGS);
+                    #{@need_frame && 'VALUE origin;'}
+                    #{@need_frame && 'ID mid0;'}
                 } method_cache_entry;
                 static method_cache_entry cache[#{@cache_index.size}];
                 static void init_method_cache() {
@@ -110,7 +113,6 @@ class CacheCall < Ruby2CExtension::Plugin
                             return;
                         }
                     }
-                    // TODO: try handling NOEX_PROTECTED
                     if (!allow_private &&
                         (body->nd_noex & (NOEX_PRIVATE|NOEX_PROTECTED)))
                     {
@@ -118,7 +120,14 @@ class CacheCall < Ruby2CExtension::Plugin
                         return;
                     }
                     body = body->nd_body;
-                    if (nd_type(body)==NODE_FBODY) body = body->nd_head;
+                    if (nd_type(body)==NODE_FBODY) {
+                        #{@need_frame && 'entry->origin = body->nd_orig;'}
+                        #{@need_frame && 'entry->mid0 = body->nd_mid;'}
+                        body = body->nd_head;
+                    } else {
+                        #{@need_frame && 'entry->origin = klass;'}
+                        #{@need_frame && 'entry->mid0 = mid;'}
+                    }
                     if (nd_type(body)==NODE_CFUNC) {
                         entry->func = body->nd_cfnc;
                         if (body->nd_argc==-1) {
@@ -152,26 +161,24 @@ class CacheCall < Ruby2CExtension::Plugin
                 "argv"
             end
             if @need_frame
-                # TODO: orig_func - should be body->nd_mid for FBODY
-                # TODO: uniq - should be frame_uniqe++ - how?
-                # TODO: last_class - should be origin klass
+                # NOTE: uniq=(long)&_frame should be frame_unique++
                 pre_call = %({
                     VALUE res;
-                    struct FRAME _frame;
-                    _frame.prev = ruby_frame;
-                    _frame.last_func = mid;
-                    _frame.orig_func = mid;
-                    _frame.tmp  = 0;
-                    _frame.node = ruby_current_node;
-                    _frame.iter = 0;
-                    _frame.argc = #{(argc<0) ? 'argc' : argc};
-                    _frame.flags = 0;
-                    _frame.uniq = 0; // frame_unique++
-                    _frame.self = recv;
-                    _frame.last_class = 0;
+                    struct FRAME _frame = {
+                        .self = recv,
+                        .argc = #{(argc<0) ? 'argc' : argc},
+                        .last_func = mid,
+                        .orig_func = entry->mid0,
+                        .last_class = entry->origin,
+                        .prev = ruby_frame,
+                        .tmp = 0,
+                        .node = ruby_current_node,
+                        .iter = 0,
+                        .flags = 0,
+                        .uniq = (long)&_frame
+                    };
                     ruby_frame = &_frame;
-                    res = 
-                )
+                    res = )
                 post_call = %(
                     ruby_frame = _frame.prev;
                     return res;

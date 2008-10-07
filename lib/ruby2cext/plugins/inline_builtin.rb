@@ -112,14 +112,18 @@ class InlineBuiltin < Ruby2CExtension::Plugin
         :'==='  => EQUAL,
     }
 
+    def self.fix2long(fix)
+        fix.clone.gsub!(/\ALONG2FIX\((.*?)\)\Z/, '(\1)') or
+        "FIX2LONG(#{fix})"
+    end
+    
     def self.fix_binary(op, rop=nil)
-        rop = nil
         fix = lambda { |this, that|
-            %{LONG2NUM(FIX2LONG(#{this}) #{op} FIX2LONG(#{that}))}
+            %{LONG2NUM(#{fix2long(this)} #{op} #{fix2long(that)})}
         }
         lambda { |cfun, this, that|
-            case deduce_type(that)
-            when nil
+            klass=deduce_type(that)
+            if !klass
                 values(cfun, 1, that, this) { |that, this|
                     cfun.c_if(%{FIXNUM_P(#{that})}) {
                         cfun.assign_res(fix[this, that])
@@ -132,22 +136,21 @@ class InlineBuiltin < Ruby2CExtension::Plugin
                     }
                     "res"
                 }
-            when Fixnum
+            elsif Fixnum.equal?(klass)
                 fix[cfun.comp(this), cfun.comp(that)]
             else
-                rop && call(cfun, this, rop, that)
+                rop && call(cfun, that, rop, this)
             end
         }
     end
     
     def self.fix_compare(op, rop=nil)
-        rop = nil
         fix = lambda { |this, that|
-            %{((FIX2LONG(#{this}) #{op} FIX2LONG(#{that}))?Qtrue:Qfalse)}
+            %{((#{fix2long(this)} #{op} #{fix2long(that)})?Qtrue:Qfalse)}
         }
         lambda { |cfun, this, that|
-            case deduce_type(that)
-            when nil
+            klass=deduce_type(that)
+            if !klass
                 values(cfun, 1, that, this) { |that, this|
                     cfun.c_if(%{FIXNUM_P(#{that})}) {
                         cfun.assign_res(fix[this, that])
@@ -160,10 +163,10 @@ class InlineBuiltin < Ruby2CExtension::Plugin
                     }
                     "res"
                 }
-            when Fixnum
+            elsif Fixnum.equal?(klass)
                 fix[cfun.comp(this), cfun.comp(that)]
             else
-                rop && call(cfun, this, rop, that)
+                rop && call(cfun, that, rop, this)
             end
         }
     end
@@ -172,31 +175,35 @@ class InlineBuiltin < Ruby2CExtension::Plugin
         :equal? => EQUAL,
         :eql?   => EQUAL,
         :'=='   => lambda { |cfun, this, that|
-            case deduce_type(that)
-            when Fixnum
-                EQUAL[cfun, this, that]
-            when nil
+            klass=deduce_type(that)
+            if !klass
                 values(cfun, 2, this, that) { |this, that| %{
                     ((#{this}==#{that}) ? Qtrue :
                       FIXNUM_P(#{that}) ? Qfalse :
-                      rb_funcall(#{that}, #{cfun.sym(:==)}, 1, #{this}))
+                      #{call(cfun, that, :==, this)})
                 }}
+            elsif Fixnum.equal?(klass)
+                EQUAL[cfun, this, that]
+            else
+                call(cfun, that, :==, this)
             end
         },
         :'<=>'  => lambda { |cfun, this, that|
-            case deduce_type(that)
-            when Fixnum
-                values(cfun, 2, this, that) { |this, that|
-                    %{INT2FIX((#{that}<#{this})-(#{this}<#{that}))}
-                }
-            when nil
+            klass=deduce_type(that)
+            if !klass
                 values(cfun, 2, this, that) { |this, that| %{
                     ((#{this}==#{that}) ? INT2FIX(0) :
                       FIXNUM_P(#{that}) ?
-                        ((FIX2LONG(#{this})>FIX2LONG(#{that})) ? INT2FIX(1) :
+                        ((#{fix2long(this)}>#{fix2long(that)}) ? INT2FIX(1) :
                           INT2FIX(-1)) :
-                      rb_funcall(#{this}, #{cfun.sym(op)}, 1, #{that}))
+                      #{pass_call(cfun, this, :<=>, that)})
                 }}
+            elsif Fixnum.equal?(klass)
+                values(cfun, 2, this, that) { |this, that|
+                    %{INT2FIX((#{this}==#{that}) ? 0 : (#{fix2long(this)}>#{fix2long(that)}) ? 1 : -1)}
+                }
+            else
+                pass_call(cfun, this, :<=>, that)
             end
         },
         :'+'    => fix_binary(:'+', :'+'),
