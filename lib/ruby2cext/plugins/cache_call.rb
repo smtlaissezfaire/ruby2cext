@@ -25,7 +25,7 @@ class CacheCall < Ruby2CExtension::Plugin
         hash = node.last
         mid = hash[:mid]
         args = hash[:args] || [:array, []]
-        argc = if args.first==:array
+        argc = if args.first == :array
             args = args.last
             args.size
         else
@@ -50,7 +50,7 @@ class CacheCall < Ruby2CExtension::Plugin
         index = @cache_index[key]
         entry = "cache[#{index}]"
         assign = node.first.equal?(:attrasgn)
-        if argc>=0
+        if argc >= 0
             last = assign && args.pop
             values(cfun, 1, last, recv, *args) { |last, recv, *args|
                 args << last if assign
@@ -78,7 +78,7 @@ class CacheCall < Ruby2CExtension::Plugin
             }
         end
     end
-    
+
     def global_c_code
         begin
             #TODO: try handling NOEX_PROTECTED
@@ -92,7 +92,7 @@ class CacheCall < Ruby2CExtension::Plugin
                 static method_cache_entry cache[#{@cache_index.size}];
                 static void init_method_cache() {
                     method_cache_entry* entry;
-                    for (entry=cache+#{@cache_index.size-1}; entry>=cache; --entry) {
+                    for (entry = cache + #{@cache_index.size-1}; entry >= cache; --entry) {
                         entry->klass = 0;
                         entry->func = 0;
                     }
@@ -120,7 +120,7 @@ class CacheCall < Ruby2CExtension::Plugin
                         return;
                     }
                     body = body->nd_body;
-                    if (nd_type(body)==NODE_FBODY) {
+                    if (nd_type(body) == NODE_FBODY) {
                         #{@need_frame && 'entry->origin = body->nd_orig;'}
                         #{@need_frame && 'entry->mid0 = body->nd_mid;'}
                         body = body->nd_head;
@@ -128,12 +128,12 @@ class CacheCall < Ruby2CExtension::Plugin
                         #{@need_frame && 'entry->origin = klass;'}
                         #{@need_frame && 'entry->mid0 = mid;'}
                     }
-                    if (nd_type(body)==NODE_CFUNC) {
+                    if (nd_type(body) == NODE_CFUNC) {
                         entry->func = body->nd_cfnc;
-                        if (body->nd_argc==-1) {
+                        if (body->nd_argc == -1) {
                             entry->klass += 1;
                             return;
-                        } else if (body->nd_argc==argc) {
+                        } else if (body->nd_argc == argc) {
                             return;
                         }
                     }
@@ -166,7 +166,7 @@ class CacheCall < Ruby2CExtension::Plugin
                     VALUE res;
                     struct FRAME _frame = {
                         .self = recv,
-                        .argc = #{(argc<0) ? 'argc' : argc},
+                        .argc = #{(argc < 0) ? 'argc' : argc},
                         .last_func = mid,
                         .orig_func = entry->mid0,
                         .last_class = entry->origin,
@@ -187,7 +187,7 @@ class CacheCall < Ruby2CExtension::Plugin
                 pre_call = "return "
                 post_call = ""
             end
-            code.concat((argc<0) ? %{
+            code.concat((argc < 0) ? %{
                 static inline VALUE cache_call(
                     int allow_private, method_cache_entry *entry,
                     VALUE recv, ID mid, int argc, VALUE *argv
@@ -201,7 +201,7 @@ class CacheCall < Ruby2CExtension::Plugin
                             #{post_call}
                         case 0:
                         case 2:
-                            return (*(allow_private?rb_funcall2:rb_funcall3))(
+                            return (*(allow_private ? rb_funcall2 : rb_funcall3))(
                                 recv, mid, argc, argv
                             );
                         default:
@@ -225,7 +225,7 @@ class CacheCall < Ruby2CExtension::Plugin
                                     (*entry->func)(recv#{args});
                             #{post_call}
                         case 2:
-                            return (*(allow_private?rb_funcall2:rb_funcall3))(
+                            return (*(allow_private ? rb_funcall2 : rb_funcall3))(
                                 recv, mid, #{argc}, #{argv}
                             );
                         default:
@@ -248,12 +248,12 @@ class CacheCall < Ruby2CExtension::Plugin
                         } else {
                             VALUE argv[#{argc}];
                             #{argv_init}
-                            if (delta==1) {
+                            if (delta == 1) {
                                 #{pre_call}
                                 (*entry->func)(#{argc}, #{argv}, recv);
                                 #{post_call}
-                            } else if (delta==2) {
-                                return (*(allow_private?rb_funcall2:rb_funcall3))(
+                            } else if (delta == 2) {
+                                return (*(allow_private ? rb_funcall2 : rb_funcall3))(
                                     recv, mid, #{argc}, #{argv}
                                 );
                             } else {
@@ -276,3 +276,5 @@ class CacheCall < Ruby2CExtension::Plugin
 end
 
 end
+
+

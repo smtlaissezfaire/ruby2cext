@@ -19,11 +19,11 @@ If multiple files are given, each file will be handled separately.
 
 === General Options:
 
--h / --help      print this help
--c / --only-c    only translate to C
--v / --verbose   print status messages
--w / --warnings  print warnings for things that might not work as expected
--V / --version   print the Ruby2CExtension version
+-h / --help	 print this help
+-c / --only-c	 only translate to C
+-v / --verbose	 print status messages
+-w / --warnings	 print warnings for things that might not work as expected
+-V / --version	 print the Ruby2CExtension version
 
 === Include Option:
 
@@ -109,13 +109,13 @@ end
 
 def main
 	opts = GetoptLong.new(
-		["--help",         "-h", GetoptLong::NO_ARGUMENT],
-		["--only-c",       "-c", GetoptLong::NO_ARGUMENT],
-		["--verbose",      "-v", GetoptLong::NO_ARGUMENT],
-		["--version",      "-V", GetoptLong::NO_ARGUMENT],
-		["--debug",              GetoptLong::NO_ARGUMENT], # undocumented
-		["--warnings",     "-w", GetoptLong::NO_ARGUMENT],
-		["--include",      "-I", GetoptLong::REQUIRED_ARGUMENT],
+		["--help",	   "-h", GetoptLong::NO_ARGUMENT],
+		["--only-c",	   "-c", GetoptLong::NO_ARGUMENT],
+		["--verbose",	   "-v", GetoptLong::NO_ARGUMENT],
+		["--version",	   "-V", GetoptLong::NO_ARGUMENT],
+		["--debug",		 GetoptLong::NO_ARGUMENT], # undocumented
+		["--warnings",	   "-w", GetoptLong::NO_ARGUMENT],
+		["--include",	   "-I", GetoptLong::REQUIRED_ARGUMENT],
 		["--optimization", "-O", GetoptLong::REQUIRED_ARGUMENT]
 	)
 
@@ -156,12 +156,12 @@ def main
 			when "--optimization"
 				case (arg = arg.to_sym)
 				when :const_cache,
-                                     :case_optimize,
-                                     :inline_builtin,
-                                     :inline_methods,
-                                     :cache_call,
-                                     :builtin_methods,
-                                     :direct_self_call
+				     :case_optimize,
+				     :inline_builtin,
+				     :inline_methods,
+				     :cache_call,
+				     :builtin_methods,
+				     :direct_self_call
 					optimizations[arg] = true
 				when :all
 					all_optimizations = true

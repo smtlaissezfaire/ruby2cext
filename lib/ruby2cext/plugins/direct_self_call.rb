@@ -12,12 +12,12 @@ class DirectSelfCall < Ruby2CExtension::Plugin
     def call(cfun, node)
         hash = node.last
         recv = hash[:recv]
-        return node if recv && (!(Array===recv) || !recv.first.equal?(:self))
+        return node if recv && (!(Array === recv) || !recv.first.equal?(:self))
         mid = hash[:mid]
         name = @ruby2c_method[[@scope,mid]]
         return node unless name
         args = hash[:args] || [:array, []]
-        if Array==args and args.first.equal?(:array) and args.last.empty?
+        if Array == args and args.first.equal?(:array) and args.last.empty?
             "#{name}(0, 0, #{cfun.get_self})"
         else
             cfun.c_scope_res {
@@ -26,7 +26,7 @@ class DirectSelfCall < Ruby2CExtension::Plugin
             }
         end
     end
-    
+
     def initialize(compiler)
         super
         @ruby2c_method = {}
@@ -58,7 +58,7 @@ class DirectSelfCall < Ruby2CExtension::Plugin
         compiler.add_preprocessor(:vcall, &method(:call))
         compiler.add_preprocessor(:fcall, &method(:call))
     end
-    
+
 end
 
 end

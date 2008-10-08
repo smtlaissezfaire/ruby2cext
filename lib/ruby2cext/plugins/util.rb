@@ -5,7 +5,7 @@ module Util
 
     def deduce_type(node)
         while true
-            Array===node or return
+            Array === node or return
             case node.first
             when :lit
                 return Kernel.const_get(node.last[:lit].class.name)
@@ -29,7 +29,7 @@ module Util
                 node = node.last[:value]
             when :attrasgn
                 args = node.last[:args]
-                Array===args or return
+                Array === args or return
                 case args.first
                 when :array
                     node = args.last.last
@@ -56,7 +56,7 @@ module Util
         rvalues.each { |rvalue|
             nreused -= 1
             val = rvalue && cfun.comp(rvalue)
-            if val=="res"
+            if val == "res"
                 if res_assign
                     header.concat("VALUE res#{res};")
                     res += 1
@@ -64,7 +64,7 @@ module Util
                 var = "res#{res}"
                 cfun.l(res_assign = "#{var} = #{val};")
                 res_val = val = var
-            elsif nreused>=0 and val and val !~ direct
+            elsif nreused >= 0 and val and val !~ direct
                 var = "reuse#{reuse}"
                 header.concat("VALUE #{var};")
                 cfun.l("#{var} = #{val};")
@@ -74,7 +74,7 @@ module Util
         }
         res_assign.replace("")
         res_val.replace("res")
-        if header.size==1
+        if header.size == 1
             header.replace("")
             yield(*vals)
         else
@@ -84,7 +84,7 @@ module Util
             "res"
         end
     end
-    
+
     def split_args(arity, extra_allowed, args)
         data = args.last
         required = []
@@ -124,7 +124,9 @@ module Util
             required
         end
     end
-    
+
 end
 
 end
+
+

@@ -28,22 +28,22 @@ class InlineBuiltin < Ruby2CExtension::Plugin
         recv = hash[:recv] || [:self, {}]
         klass = deduce_type(recv)
         mid = hash[:mid]
-        inline = (INLINE[klass]||{})[mid] || INLINE[nil][mid] or return node
+        inline = (INLINE[klass] || {})[mid] || INLINE[nil][mid] or return node
         arity = inline.arity
-        arity = -arity-1 if (extra_allowed = (arity<0))
+        arity = -arity - 1 if (extra_allowed = (arity<0))
         arity -= 2
-        arity>=0 or return node
+        arity >= 0 or return node
         args = hash[:args] || [:array, []]
         args = split_args(arity, extra_allowed, args) or return node
         inline[cfun, recv, *args] || node
     end
-    
-    EQUAL = lambda { |cfun, this, that| 
+
+    EQUAL = lambda { |cfun, this, that|
         values(cfun, 0, this, that) { |this, that| %{
-            (#{this}==(#{that}) ? Qtrue : Qfalse)
+            (#{this} == (#{that}) ? Qtrue : Qfalse)
         }}
     }
-    
+
     def self.call(cfun, this, mid, *args)
         cfun.comp([:call, {
             :recv => this,
@@ -51,7 +51,7 @@ class InlineBuiltin < Ruby2CExtension::Plugin
             :args => [:array, args]
         }])
     end
-    
+
     def self.pass_call(cfun, this, mid, *args)
         cfun.comp([:inline_pass, :call, {
             :recv => this,
@@ -59,9 +59,9 @@ class InlineBuiltin < Ruby2CExtension::Plugin
             :args => [:array, args]
         }])
     end
-    
+
     INLINE = {}
-    
+
     INLINE[nil] = {
         :__id__ => lambda { |cfun, this|
             values(cfun, 1, this) { |this| %{(
@@ -71,7 +71,7 @@ class InlineBuiltin < Ruby2CExtension::Plugin
                     LONG2NUM((long)(#{this})) :
                     (VALUE)((long)(#{this})|FIXNUM_FLAG)
             )}}
-            
+
         },
         :__send__ => lambda { |cfun, this, method, *args|
             args = args[0]
@@ -90,21 +90,21 @@ class InlineBuiltin < Ruby2CExtension::Plugin
         :'=='   => EQUAL,
         :'==='  => EQUAL,
     }
-    
+
     INLINE[FalseClass] = {
         :equal? => EQUAL,
         :eql?   => EQUAL,
         :'=='   => EQUAL,
         :'==='  => EQUAL,
     }
-    
+
     INLINE[TrueClass] = {
         :equal? => EQUAL,
         :eql?   => EQUAL,
         :'=='   => EQUAL,
         :'==='  => EQUAL,
     }
-    
+
     INLINE[Symbol] = {
         :equal? => EQUAL,
         :eql?   => EQUAL,
@@ -116,13 +116,13 @@ class InlineBuiltin < Ruby2CExtension::Plugin
         fix.clone.gsub!(/\ALONG2FIX\((.*?)\)\Z/, '(\1)') or
         "FIX2LONG(#{fix})"
     end
-    
+
     def self.fix_binary(op, rop=nil)
         fix = lambda { |this, that|
             %{LONG2NUM(#{fix2long(this)} #{op} #{fix2long(that)})}
         }
         lambda { |cfun, this, that|
-            klass=deduce_type(that)
+            klass = deduce_type(that)
             if !klass
                 values(cfun, 1, that, this) { |that, this|
                     cfun.c_if(%{FIXNUM_P(#{that})}) {
@@ -143,7 +143,7 @@ class InlineBuiltin < Ruby2CExtension::Plugin
             end
         }
     end
-    
+
     def self.fix_compare(op, rop=nil)
         fix = lambda { |this, that|
             %{((#{fix2long(this)} #{op} #{fix2long(that)})?Qtrue:Qfalse)}
@@ -178,7 +178,7 @@ class InlineBuiltin < Ruby2CExtension::Plugin
             klass=deduce_type(that)
             if !klass
                 values(cfun, 2, this, that) { |this, that| %{
-                    ((#{this}==#{that}) ? Qtrue :
+                    ((#{this} == #{that}) ? Qtrue :
                       FIXNUM_P(#{that}) ? Qfalse :
                       #{call(cfun, that, :==, this)})
                 }}
@@ -192,15 +192,15 @@ class InlineBuiltin < Ruby2CExtension::Plugin
             klass=deduce_type(that)
             if !klass
                 values(cfun, 2, this, that) { |this, that| %{
-                    ((#{this}==#{that}) ? INT2FIX(0) :
+                    ((#{this} == #{that}) ? INT2FIX(0) :
                       FIXNUM_P(#{that}) ?
-                        ((#{fix2long(this)}>#{fix2long(that)}) ? INT2FIX(1) :
+                        ((#{fix2long(this)} > #{fix2long(that)}) ? INT2FIX(1) :
                           INT2FIX(-1)) :
                       #{pass_call(cfun, this, :<=>, that)})
                 }}
             elsif Fixnum.equal?(klass)
                 values(cfun, 2, this, that) { |this, that|
-                    %{INT2FIX((#{this}==#{that}) ? 0 : (#{fix2long(this)}>#{fix2long(that)}) ? 1 : -1)}
+                    %{INT2FIX((#{this} == #{that}) ? 0 : (#{fix2long(this)}>#{fix2long(that)}) ? 1 : -1)}
                 }
             else
                 pass_call(cfun, this, :<=>, that)

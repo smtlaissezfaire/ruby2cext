@@ -152,12 +152,12 @@ module Ruby2CExtension
 				if opt == :all
 					opt = {
 						:const_cache=>true,
-                                                :case_optimize=>true,
-                                                :direct_self_call=>true,
-                                                :inline_builtin=>true,
-                                                :cache_call=>true,
+						:case_optimize=>true,
+						:direct_self_call=>true,
+						:inline_builtin=>true,
+						:cache_call=>true,
 						:builtin_methods=>true,
-                                                :inline_methods=>true
+						:inline_methods=>true
 					}
 				end
 				if opt[:const_cache]
@@ -168,22 +168,22 @@ module Ruby2CExtension
 					require "ruby2cext/plugins/case_optimize"
 					add_plugin(Plugins::CaseOptimize)
 				end
-                                if opt[:direct_self_call]
+				if opt[:direct_self_call]
 					require "ruby2cext/plugins/direct_self_call"
 					add_plugin(Plugins::DirectSelfCall)
-                                end
-                                if opt[:inline_builtin]
+				end
+				if opt[:inline_builtin]
 					require "ruby2cext/plugins/inline_builtin"
 					add_plugin(Plugins::InlineBuiltin)
-                                end
+				end
 				if opt[:inline_methods]
 					require "ruby2cext/plugins/inline_methods"
 					add_plugin(Plugins::InlineMethods)
 				end
-                                if opt[:cache_call]
+				if opt[:cache_call]
 					require "ruby2cext/plugins/cache_call"
 					add_plugin(Plugins::CacheCall)
-                                end
+				end
 				if (builtins = opt[:builtin_methods])
 					require "ruby2cext/plugins/builtin_methods"
 					if Array === builtins
