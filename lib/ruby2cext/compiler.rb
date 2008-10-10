@@ -157,7 +157,8 @@ module Ruby2CExtension
 						:inline_builtin=>true,
 						:cache_call=>true,
 						:builtin_methods=>true,
-						:inline_methods=>true
+						:inline_methods=>true,
+                                                :ivar_cache=>true
 					}
 				end
 				if opt[:const_cache]
@@ -192,6 +193,10 @@ module Ruby2CExtension
 						builtins = Plugins::BuiltinMethods::SUPPORTED_BUILTINS
 					end
 					add_plugin(Plugins::BuiltinMethods, builtins)
+				end
+				if opt[:ivar_cache]
+					require "ruby2cext/plugins/ivar_cache"
+					add_plugin(Plugins::IVarCache)
 				end
 			end
 			if (ri_args = options[:require_include])

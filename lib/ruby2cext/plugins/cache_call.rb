@@ -48,7 +48,7 @@ class CacheCall < Ruby2CExtension::Plugin
             key << cfun.__id__ << recv.inspect
         end
         index = @cache_index[key]
-        entry = "cache[#{index}]"
+        entry = "method_cache[#{index}]"
         assign = node.first.equal?(:attrasgn)
         if argc >= 0
             last = assign && args.pop
@@ -89,10 +89,10 @@ class CacheCall < Ruby2CExtension::Plugin
                     #{@need_frame && 'VALUE origin;'}
                     #{@need_frame && 'ID mid0;'}
                 } method_cache_entry;
-                static method_cache_entry cache[#{@cache_index.size}];
+                static method_cache_entry method_cache[#{@cache_index.size}];
                 static void init_method_cache() {
                     method_cache_entry* entry;
-                    for (entry = cache + #{@cache_index.size-1}; entry >= cache; --entry) {
+                    for (entry = method_cache + #{@cache_index.size-1}; entry >= method_cache; --entry) {
                         entry->klass = 0;
                         entry->func = 0;
                     }
