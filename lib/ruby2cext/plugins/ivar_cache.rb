@@ -64,12 +64,20 @@ class IVarCache < Ruby2CExtension::Plugin
                 }
                 return 0;
             }
-            static inline VALUE cache_ivar_get(ivar_cache_entry* entry,
+            static VALUE cache_ivar_get(ivar_cache_entry* entry,
                                                VALUE obj, ID id)
             {
                 st_table* table = ROBJECT(obj)->iv_tbl;
                 unsigned bin_pos;
                 st_table_entry *cur;
+                switch (TYPE(obj)) {
+                    case T_OBJECT:
+                    case T_CLASS:
+                    case T_MODULE:
+                        break;
+                    default:
+                        return rb_ivar_get(obj, id);
+                }
                 if (!table) return Qnil;
                 if (entry->num_bins==table->num_bins) {
                     bin_pos = entry->bin_pos;
@@ -83,7 +91,7 @@ class IVarCache < Ruby2CExtension::Plugin
                 cur = st_find_collided(&table->bins[bin_pos], id);
                 return cur ? cur->record : Qnil;
             }
-            static inline VALUE cache_ivar_set(ivar_cache_entry* entry,
+            static VALUE cache_ivar_set(ivar_cache_entry* entry,
                                                VALUE obj, ID id, VALUE val)
             {
                 st_table* table;
@@ -91,6 +99,14 @@ class IVarCache < Ruby2CExtension::Plugin
                 st_table_entry *cur;
                 if (!OBJ_TAINTED(obj) && rb_safe_level() >= 4 || OBJ_FROZEN(obj))
                     return rb_ivar_set(obj, id, val);
+                switch (TYPE(obj)) {
+                    case T_OBJECT:
+                    case T_CLASS:
+                    case T_MODULE:
+                        break;
+                    default:
+                        return rb_ivar_set(obj, id, val);
+                }
                 table = ROBJECT(obj)->iv_tbl;
                 if (!table) {
                     table = ROBJECT(obj)->iv_tbl = st_init_numtable();

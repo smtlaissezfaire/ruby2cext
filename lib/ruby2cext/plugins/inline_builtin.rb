@@ -37,6 +37,7 @@ class InlineBuiltin < Ruby2CExtension::Plugin
         if arity==0
             return values(cfun, (m.arity<0) ? 1 : 0, recv, &m)
         end
+        args = args.clone
         first = args.shift
         if klass = deduce_type(first)
             if f = m[klass]
@@ -142,21 +143,21 @@ class InlineBuiltin < Ruby2CExtension::Plugin
     }
 
     COMMON = {
-        [:equal?,1] => lambda { |cfun, this, that|
+        [:equal?,1] => {nil => lambda { |cfun, this, that|
             %{(#{this} == (#{that}) ? Qtrue : Qfalse)}
-        },
-        [:'eql?',1] => lambda { |cfun, this, that|
+        }},
+        [:'eql?',1] => {nil => lambda { |cfun, this, that|
             %{(#{this} == (#{that}) ? Qtrue : Qfalse)}
-        },
-        [:'==',1] => lambda { |cfun, this, that|
+        }},
+        [:'==',1] => {nil => lambda { |cfun, this, that|
             %{(#{this} == (#{that}) ? Qtrue : Qfalse)}
-        },
-        [:'===',1] => lambda { |cfun, this, that|
+        }},
+        [:'===',1] => {nil => lambda { |cfun, this, that|
             %{(#{this} == (#{that}) ? Qtrue : Qfalse)}
-        },
-        [:'=~',1] => lambda { |cfun, this, that|
+        }},
+        [:'=~',1] => {nil => lambda { |cfun, this, that|
             %{Qfalse}
-        },
+        }},
         [:'nil?',0] => lambda { |cfun, this|
             %{Qfalse}
         },
@@ -188,15 +189,15 @@ class InlineBuiltin < Ruby2CExtension::Plugin
     }
 
     INLINE[NilClass] = COMMON.merge({
-        [:'&',1] => lambda { |cfun, this, that|
+        [:'&',1] => {nil => lambda { |cfun, this, that|
             %{Qfalse}
-        },
-        [:'|',1] => lambda { |cfun, this, that|
+        }},
+        [:'|',1] => {nil => lambda { |cfun, this, that|
             %{(RTEST(#{that}) ? Qtrue : Qfalse)}
-        },
-        [:'^',1] => lambda { |cfun, this, that|
+        }},
+        [:'^',1] => {nil => lambda { |cfun, this, that|
             %{(RTEST(#{that}) ? Qtrue : Qfalse)}
-        },
+        }},
         [:'to_i',0] => lambda { |cfun, this|
             %{INT2FIX(0)}
         },
@@ -218,30 +219,30 @@ class InlineBuiltin < Ruby2CExtension::Plugin
     })
 
     INLINE[FalseClass] = COMMON.merge({
-        [:'&',1] => lambda { |cfun, this, that|
+        [:'&',1] => {nil => lambda { |cfun, this, that|
             %{Qfalse}
-        },
-        [:'|',1] => lambda { |cfun, this, that|
+        }},
+        [:'|',1] => {nil => lambda { |cfun, this, that|
             %{(RTEST(#{that}) ? Qtrue : Qfalse)}
-        },
-        [:'^',1] => lambda { |cfun, this, that|
+        }},
+        [:'^',1] => {nil => lambda { |cfun, this, that|
             %{(RTEST(#{that}) ? Qtrue : Qfalse)}
-        },
+        }},
         [:'to_s',0] => lambda { |cfun, this|
             %{rb_str_new2("false")}
         },
     })
 
     INLINE[TrueClass] = COMMON.merge({
-        [:'&',1] => lambda { |cfun, this, that|
+        [:'&',1] => {nil => lambda { |cfun, this, that|
             %{(RTEST(#{that}) ? Qtrue : Qfalse)}
-        },
-        [:'|',1] => lambda { |cfun, this, that|
+        }},
+        [:'|',1] => {nil => lambda { |cfun, this, that|
             %{Qtrue}
-        },
-        [:'^',1] => lambda { |cfun, this, that|
+        }},
+        [:'^',1] => {nil => lambda { |cfun, this, that|
             %{(RTEST(#{that}) ? Qfalse : Qtrue)}
-        },
+        }},
         [:'to_s',0] => lambda { |cfun, this|
             %{rb_str_new2("true")}
         },
