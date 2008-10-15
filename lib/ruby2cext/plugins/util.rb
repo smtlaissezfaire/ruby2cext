@@ -79,13 +79,17 @@ module Util
             yield(*vals)
         else
             res_rvalue = yield(*vals)
-            cfun.assign_res(res_rvalue) unless res_rvalue=="res"
+            cfun.assign_res(res_rvalue)
             cfun.l "}"
             "res"
         end
     end
 
-    def split_args(arity, extra_allowed, args)
+    def split_args(arity, args, extra_allowed=nil)
+        if arity<0
+            extra_allowed = true
+            arity = -arity -1
+        end
         data = args.last
         required = []
         remaining = nil
@@ -100,14 +104,14 @@ module Util
         when :splat
             remaining = args
         when :argscat
-            required = split_args(arity, true, data[:head]) or return nil
+            required = split_args(arity, data[:head], true) or return nil
             remaining = [:argscat, {:head => required.pop, :body => data[:body]}]
         when :argspush
             if extra_allowed
-                required = split_args(arity, true, data[:head]) or return nil
+                required = split_args(arity, data[:head], true) or return nil
                 remaining = [:argspush, {:head => required.pop, :body => data[:body]}]
             else
-                required = split_args(arity-1, false, data[:head]) or return nil
+                required = split_args(arity-1, data[:head], false) or return nil
                 required << data[:body]
             end
         else
@@ -122,6 +126,24 @@ module Util
             nil
         else
             required
+        end
+    end
+
+    def args_arity(args)
+        data = args.last
+        case args.first
+        when :array
+            data.size
+        when :splat
+            -1
+        when :argscat
+            arity = args_arity(data[:head])
+            (arity<0) ? arity : -arity - 1
+        when :argspush
+            arity = args_arity(data[:head])
+            (arity<0) ? arity : arity + 1
+        else
+            -1
         end
     end
 
